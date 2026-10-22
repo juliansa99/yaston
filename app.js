@@ -57,6 +57,13 @@ async function loadAll() {
   if (S.isAdmin) jobs.push(must(db.from('player_emails').select('*')));
   const [players, matches, mp, mvp, totals, votes, meId, emails] = await Promise.all(jobs);
   S.players = players; S.matches = matches; S.mp = mp; S.mvp = mvp; S.meId = meId;
+  if (S.isAdmin) { // invitados que quedaron sin ningún partido: se limpian solos
+    const orphans = players.filter(p => p.guest && !mp.some(x => x.player_id === p.id));
+    if (orphans.length) {
+      db.from('players').delete().in('id', orphans.map(p => p.id)).then(() => {});
+      S.players = players.filter(p => !orphans.includes(p));
+    }
+  }
   S.totals = Object.fromEntries(totals.map(t => [t.match_id, t.total]));
   S.myVotes = Object.fromEntries(votes.map(v => [v.match_id, v.voted_for]));
   S.emails = emails ? Object.fromEntries(emails.map(e => [e.player_id, e.email])) : {};
@@ -98,7 +105,7 @@ function standings() {
   for (const r of all) r.st = streaks(H.get(r.p.id) || []);
   const played = all.filter(r => r.pj > 0).sort((a, b) =>
     b.pts - a.pts || b.g - a.g || b.mvp - a.mvp || a.pe - b.pe || a.p.name.localeCompare(b.p.name));
-  const never = all.filter(r => r.pj === 0).sort((a, b) => a.p.name.localeCompare(b.p.name));
+  const never = all.filter(r => r.pj === 0 && !r.p.guest).sort((a, b) => a.p.name.localeCompare(b.p.name));
   return { played, never };
 }
 
@@ -516,7 +523,8 @@ function matchModal(id) {
     if (reg) return err.textContent = `${reg.name} ya está en el plantel: buscalo en la lista de arriba.`;
     if (cand.some(c => norm(c.p?.name || c.name) === same)) return err.textContent = `${name} ya está en la lista del partido.`;
     // si ya vino de invitado antes, se usa el mismo jugador (así suma sus partidos en la tabla)
-    const before = S.players.find(p => p.guest && norm(p.name) === same);
+    const games = p => S.mp.filter(x => x.player_id === p.id).length;
+    const before = S.players.filter(p => p.guest && norm(p.name) === same).sort((x, y) => games(y) - games(x))[0];
     const c = before ? { key: before.id, p: before } : { key: 'new' + (++n), name, temp: true };
     cand.push(c);
     $('#plist').insertAdjacentHTML('beforeend', pickRow(c, ''));

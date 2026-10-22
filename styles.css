@@ -301,3 +301,26 @@ nav.tabs button { font-size: .7rem; }
 .tbl td.avg { color: var(--txt); }
 .tbl tr.few td.avg { color: var(--mut); }
 .tbl tr.few { opacity: .78; }
+
+/* ---------- torneos ---------- */
+.torneo-card { display: flex; justify-content: space-between; align-items: center; gap: 12px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 12px; }
+.torneo-card b { font-size: 1rem; }
+.champ-card { display: flex; align-items: center; gap: 16px; }
+.champ-name { font-size: 1.5rem; font-weight: 800; color: var(--accent); }
+.rules { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 4px; }
+.rule { font-size: .8rem; padding: 6px 12px; border-radius: 999px; color: #101010; }
+.rule.w { background: #3ddc84; }
+.rule.d { background: #ffd23f; }
+.rule.l { background: #ff9f43; }
+.tbl.apertura { table-layout: fixed; }
+.tbl.apertura th:nth-child(1) { width: 30px; }
+.tbl.apertura th:nth-child(3) { width: 54px; }
+.tbl.apertura th:nth-child(4) { width: 54px; }
+.tbl.apertura th:nth-child(5) { width: 58px; }
+.tbl.titles { table-layout: auto; }
+.tbl.titles th, .tbl.titles td { padding: 8px 6px; font-size: .85rem; }
+@media (max-width: 420px) {
+  .tbl.apertura th:nth-child(1) { width: 24px; }
+  .tbl.apertura th:nth-child(3), .tbl.apertura th:nth-child(4) { width: 44px; }
+  .tbl.apertura th:nth-child(5) { width: 50px; }
+}

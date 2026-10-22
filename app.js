@@ -6,6 +6,24 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const app = $('#app');
 const PTS = { W: 3, D: 1, L: 0 };
 const MAX_TRIES = 3;
+// Tabla final del Apertura 2026 (primera mitad del año): se jugaba con otro puntaje, así que queda fija.
+const APERTURA_2026 = [
+  ['Chiqui Masla', 38, 12], ['Tomer', 34, 14], ['Tarlo', 30, 15], ['Webo', 28, 14], ['Guido', 27, 10], ['Peto', 27, 12],
+  ['Gure', 22, 10], ['Fito', 21, 8], ['Ivancito', 18, 8], ['Dbor', 17, 9], ['Langer', 15, 8], ['Fefe', 15, 7],
+  ['Lucho', 12.5, 8], ['Gueler', 11, 6], ['Ruso', 10, 3], ['Tau', 8.5, 6], ['Bono', 8, 4], ['Brian', 7, 4],
+  ['Yanu', 6, 3], ['Niesa', 2, 3], ['Gorbi', 1.5, 3], ['Primo', 0.5, 1],
+].map(([n, pts, asist]) => ({ n, pts, asist, prom: pts / asist }));
+// Nombre en la planilla -> nombre en el Plantel (solo cuando es el mismo jugador con otro nombre)
+const ALIAS = { 'chiqui masla': 'masla' };
+const TORNEOS = [
+  { id: 'clausura-2026', name: 'Clausura 2026', full: 'Yaston League Clausura', from: '2026-06-16', to: '2026-12-31', kind: 'vivo', rules: { W: 3, D: 1, L: 0 } },
+  { id: 'apertura-2026', name: 'Apertura 2026', full: 'Yaston League Apertura', from: '2026-01-01', to: '2026-06-15', kind: 'fija', rules: { W: 4, D: 2, L: 1 }, partidos: 16 },
+  { id: 'anual-2025', name: 'Anual 2025', full: 'Yaston League Anual', from: '2025-01-01', to: '2025-12-31', kind: 'sin-datos', champion: 'Masla' },
+];
+const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+const torneoActual = () => TORNEOS.find(t => t.from <= todayISO() && todayISO() <= t.to) || TORNEOS[0];
+const num = (n, d = 2) => Number(n).toLocaleString('es-AR', { maximumFractionDigits: d });
+const fmtShort = d => new Date(d + 'T12:00:00').toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' });
 // Un juego por semana. Cada entrada rige desde el lunes indicado; si no hay uno nuevo, sigue el último.
 const WEEKLY_GAMES = [
   { id: 'penales', from: '2026-10-19', title: 'Pateale Penales a Gure', blurb: 'Tanda de 5 penales. Tocá el arco y fijate si Gure la ataja.' },
@@ -20,7 +38,7 @@ if (!cfg.SUPABASE_URL || !cfg.SUPABASE_ANON_KEY) {
 const db = supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
 
 const S = {
-  user: null, isAdmin: false, meId: null, tab: 'tabla', game: null, year: 'all', sort: 'pts',
+  user: null, isAdmin: false, meId: null, tab: 'tabla', game: null, torneo: null, sort: 'pts',
   week: null, board: [], plays: [], playId: null,
   players: [], emails: {}, matches: [], mp: [], mvp: [], totals: {}, myVotes: {}, unclaimed: [],
 };
@@ -112,17 +130,18 @@ function mvpWinners(matchId) {
   if (!rows.length) return { winners: [], rows };
   return { winners: rows.filter(r => r.votes === rows[0].votes), rows };
 }
-function standings() {
+function standings(t) { // t = torneo (rango de fechas y puntaje); null = todos los partidos cargados
   const rows = new Map(S.players.map(p => [p.id, { p, pj: 0, g: 0, e: 0, pe: 0, pts: 0, mvp: 0 }]));
-  const inYear = m => S.year === 'all' || m.played_on.startsWith(S.year);
+  const inT = m => !t || (m.played_on >= t.from && m.played_on <= t.to);
+  const rules = t?.rules || PTS;
   for (const m of S.matches) {
-    if (!m.result || !inYear(m)) continue;
+    if (!m.result || !inT(m)) continue;
     for (const x of S.mp.filter(x => x.match_id === m.id)) {
       const r = rows.get(x.player_id); if (!r) continue;
       r.pj++;
-      if (m.result === 'D') { r.e++; r.pts += PTS.D; }
-      else if (m.result === x.team) { r.g++; r.pts += PTS.W; }
-      else { r.pe++; r.pts += PTS.L; }
+      if (m.result === 'D') { r.e++; r.pts += rules.D; }
+      else if (m.result === x.team) { r.g++; r.pts += rules.W; }
+      else { r.pe++; r.pts += rules.L; }
     }
     if (!m.voting_open) for (const w of mvpWinners(m.id).winners) { const r = rows.get(w.player_id); if (r) r.mvp++; }
   }
@@ -369,29 +388,90 @@ function mountGame() {
   });
 }
 
+function playerByName(n) {
+  const k = n.trim().toLowerCase();
+  const target = ALIAS[k] || k;
+  return S.players.find(p => !p.guest && p.name.trim().toLowerCase() === target) || null;
+}
+function champion(t) {
+  if (t.champion) return t.champion;
+  if (t.kind === 'fija') { const top = APERTURA_2026[0]; return playerByName(top.n)?.name || top.n; }
+  return null;
+}
+function avName(n) { // avatar de un nombre de la planilla (con foto si es un jugador del plantel)
+  const p = playerByName(n);
+  return p ? av(p) : `<span class="av">${esc(initials(n))}</span>`;
+}
+
 function viewTabla() {
-  const years = [...new Set(S.matches.map(m => m.played_on.slice(0, 4)))].sort().reverse();
-  const { played, never } = standings();
-  const few = r => S.sort === 'avg' && r.pj > 0 && r.pj < MIN;
-  const row = (r, i, dim) => `<tr class="${i === 0 && !dim ? 'top1' : ''} ${dim ? 'dim' : ''} ${few(r) ? 'few' : ''}">
+  const t = TORNEOS.find(x => x.id === S.torneo) || torneoActual();
+  const finished = t.to < todayISO();
+  const champ = champion(t);
+  const rango = `${finished ? 'Finalizó el' : 'Termina el'} ${fmtShort(t.to)}`;
+  const head = `
+    <div class="section-title"><h2>Tabla de posiciones</h2>
+      <div class="filters"><select class="sel" data-act="torneo">
+        ${TORNEOS.map(x => `<option value="${x.id}" ${x.id === t.id ? 'selected' : ''}>${x.name}</option>`).join('')}
+      </select></div></div>
+    <div class="torneo-card">
+      <div><b>${esc(t.full)} ${t.name.split(' ').pop()}</b><div class="muted small">${rango}</div></div>
+      <span class="badge ${finished ? '' : 'hot'}">${finished ? 'Finalizado' : 'En juego'}</span>
+    </div>`;
+  let body;
+  if (t.kind === 'sin-datos') {
+    body = `<div class="card champ-card">${avName(champ).replace('class="av', 'class="av xl')}
+      <div><div class="eyebrow">Campeón</div><div class="champ-name">🏆 ${esc(champ)}</div>
+      <div class="muted small" style="margin-top:6px">De este torneo no hay tabla ni partidos cargados.</div></div></div>`;
+  } else if (t.kind === 'fija') {
+    const rows = APERTURA_2026.map((r, i) => ({ ...r, pos: i + 1 }));
+    const list = S.sort === 'avg'
+      ? [...rows.filter(r => r.asist >= MIN).sort((a, b) => b.prom - a.prom || b.asist - a.asist || b.pts - a.pts), ...rows.filter(r => r.asist < MIN)]
+      : rows;
+    body = `<div class="table-wrap"><table class="tbl apertura">
+      <thead><tr><th>#</th><th class="l">Jugador</th>
+        <th class="sortable ${S.sort === 'pts' ? 'on' : ''}" data-act="sort" data-s="pts">Pts${S.sort === 'pts' ? '▾' : ''}</th>
+        <th>Asist.</th>
+        <th class="sortable ${S.sort === 'avg' ? 'on' : ''}" data-act="sort" data-s="avg">Prom.${S.sort === 'avg' ? '▾' : ''}</th></tr></thead>
+      <tbody>${list.map((r, i) => `<tr class="${i === 0 ? 'top1' : ''} ${S.sort === 'avg' && r.asist < MIN ? 'few' : ''}"><td class="pos">${i + 1}</td>
+        <td class="l"><div class="pl">${avName(r.n)}<span class="who"><span class="n">${esc(playerByName(r.n)?.name || r.n)}</span></span></div></td>
+        <td class="pts">${num(r.pts)}</td><td>${r.asist}</td><td class="avg">${num(r.prom)}${r.asist < MIN ? '*' : ''}</td></tr>`).join('')}</tbody>
+    </table></div>
+    <div class="rules">
+      <span class="rule w">Equipo ganador: <b>${t.rules.W} puntos</b></span>
+      <span class="rule d">Empate: <b>${t.rules.D} puntos</b></span>
+      <span class="rule l">Equipo perdedor: <b>${t.rules.L} punto</b></span>
+    </div>
+    <p class="legend">Partidos: ${t.partidos}. Asist.: partidos jugados. Prom.: puntos ÷ asistencia. Tocá <b>Pts</b> o <b>Prom.</b> para ordenar. Al ordenar por promedio solo entran los que jugaron al menos ${MIN} partidos; los demás van al final, con *.
+    Esta tabla es la final del torneo y no se modifica.</p>`;
+  } else {
+    const { played, never } = standings(t);
+    const few = r => S.sort === 'avg' && r.pj > 0 && r.pj < MIN;
+    const row = (r, i, dim) => `<tr class="${i === 0 && !dim ? 'top1' : ''} ${dim ? 'dim' : ''} ${few(r) ? 'few' : ''}">
       <td class="pos">${dim ? '–' : i + 1}</td>
       <td class="l"><div class="pl">${av(r.p)}<span class="who"><span class="n">${esc(r.p.name)}</span><span class="tags">${r.p.guest ? '<span class="badge">invitado</span>' : ''}${r.st.cw >= 3 ? `<span class="badge hot" title="Racha de victorias">🔥${r.st.cw}</span>` : r.st.cl >= 3 ? `<span class="badge cold" title="Racha de derrotas">🥶${r.st.cl}</span>` : ''}</span></span></div></td>
       <td>${r.pj}</td><td>${r.g}</td><td>${r.e}</td><td>${r.pe}</td><td>${r.mvp ? '⭐' + r.mvp : '–'}</td><td class="avg">${r.pj ? Math.round(r.pct * 100) + '%' + (r.pj < MIN ? '*' : '') : '–'}</td><td class="pts">${r.pts}</td></tr>`;
-  const played_n = S.matches.filter(m => m.result && (S.year === 'all' || m.played_on.startsWith(S.year))).length;
-  return `
-    <div class="section-title"><h2>Tabla de posiciones</h2>
-      <div class="filters"><select class="sel" data-act="year">
-        <option value="all">Histórica</option>${years.map(y => `<option ${S.year === y ? 'selected' : ''}>${y}</option>`).join('')}
-      </select></div></div>
-    ${!S.players.length ? '<div class="empty">Todavía no hay jugadores cargados.</div>' : `
+    const played_n = S.matches.filter(m => m.result && m.played_on >= t.from && m.played_on <= t.to).length;
+    body = !S.players.length ? '<div class="empty">Todavía no hay jugadores cargados.</div>' : `
     <div class="table-wrap"><table class="tbl">
       <thead><tr><th>#</th><th class="l">Jugador</th><th>PJ</th><th>G</th><th>E</th><th>P</th><th>MVP</th>
         <th class="sortable ${S.sort === 'avg' ? 'on' : ''}" data-act="sort" data-s="avg" title="Ordenar por promedio de victorias">%${S.sort === 'avg' ? '▾' : ''}</th>
         <th class="sortable ${S.sort === 'pts' ? 'on' : ''}" data-act="sort" data-s="pts" title="Ordenar por puntos">Pts${S.sort === 'pts' ? '▾' : ''}</th></tr></thead>
       <tbody>${played.map((r, i) => row(r, i)).join('')}${never.map(r => row(r, 0, true)).join('')}</tbody>
     </table></div>
-    <p class="legend">Ganado 3 pts · Empate 1 · Perdido 0. PJ: jugados · G/E/P: ganados/empatados/perdidos · ⭐ veces elegido jugador del partido · %: promedio de victorias (ganados ÷ jugados). Tocá <b>%</b> o <b>Pts</b> arriba para ordenar la tabla por promedio o por puntos. Al ordenar por promedio solo entran los que jugaron al menos ${MIN} partidos; los demás van al final, con * en el %. ${played_n} partido${played_n === 1 ? '' : 's'} jugado${played_n === 1 ? '' : 's'}.
-    🔥 3 o más victorias seguidas · 🥶 3 o más derrotas seguidas. Los de abajo (en gris) son parte del grupo pero todavía no jugaron.</p>`}`;
+    <div class="rules">
+      <span class="rule w">Ganado: <b>${t.rules.W} pts</b></span><span class="rule d">Empate: <b>${t.rules.D} pt</b></span><span class="rule l">Perdido: <b>${t.rules.L} pts</b></span>
+    </div>
+    <p class="legend">PJ: jugados · G/E/P: ganados/empatados/perdidos · ⭐ veces elegido jugador del partido · %: promedio de victorias (ganados ÷ jugados). Tocá <b>%</b> o <b>Pts</b> arriba para ordenar la tabla por promedio o por puntos. Al ordenar por promedio solo entran los que jugaron al menos ${MIN} partidos; los demás van al final, con * en el %.
+    ${played_n} partido${played_n === 1 ? '' : 's'} jugado${played_n === 1 ? '' : 's'}.
+    🔥 3 o más victorias seguidas · 🥶 3 o más derrotas seguidas. Los de abajo (en gris) son parte del grupo pero todavía no jugaron.</p>`;
+  }
+  const palmares = [...TORNEOS].sort((a, b) => a.from.localeCompare(b.from)).map(x => {
+    const c = champion(x), fin = x.to < todayISO();
+    return `<tr><td>${x.to.slice(0, 4)}</td><td class="l">${esc(x.full)}</td><td>${fin && c ? '🏆 ' + esc(c) : '<span class="muted">En juego</span>'}</td><td>${fmtShort(x.to)}</td></tr>`;
+  }).join('');
+  return head + body + `
+    <div class="section-title"><h2>Títulos</h2></div>
+    <div class="table-wrap"><table class="tbl titles"><thead><tr><th>Año</th><th class="l">Torneo</th><th>Campeón</th><th>Finaliza</th></tr></thead><tbody>${palmares}</tbody></table></div>`;
 }
 
 function teamHtml(m, t) {
@@ -453,7 +533,7 @@ function viewPartidos() {
 
 function viewPlantel() {
   const roster = S.players.filter(p => !p.guest);
-  const st = Object.fromEntries([...standings().played, ...standings().never].map(r => [r.p.id, r]));
+  const all = standings(null), st = Object.fromEntries([...all.played, ...all.never].map(r => [r.p.id, r]));
   return `<div class="section-title"><h2>Plantel · ${roster.length}</h2>
       ${S.isAdmin ? '<button class="btn primary sm" data-act="new-player">+ Jugador</button>' : ''}</div>
     ${S.user && !S.meId ? '<div class="card"><b>¿Quién sos?</b><div class="muted small" style="margin:4px 0 10px">Elegí tu nombre para poder votar.</div><button class="btn sm primary" data-act="claim">Elegir quién soy</button></div>' : ''}
@@ -679,7 +759,7 @@ const actions = {
     catch (e) { S.playId = null; toast(e.message, true); refresh(); }
   },
   tab: el => { S.tab = el.dataset.tab; S.game = null; S.playId = null; render(); scrollTo(0, 0); },
-  year: el => { S.year = el.value; render(); },
+  torneo: el => { S.torneo = el.value; render(); },
   vote: async el => {
     try { await must(db.rpc('cast_vote', { p_match: el.dataset.m, p_for: el.dataset.p })); toast('Voto registrado 🗳️'); refresh(); }
     catch (e) { toast(e.message, true); }
@@ -705,7 +785,7 @@ document.addEventListener('click', e => {
   const el = e.target.closest('[data-act]');
   if (el && el.tagName !== 'SELECT') actions[el.dataset.act]?.(el);
 });
-document.addEventListener('change', e => { if (e.target.dataset?.act === 'year') actions.year(e.target); });
+document.addEventListener('change', e => { if (e.target.dataset?.act === 'torneo') actions.torneo(e.target); });
 
 /* ---------------- inicio ---------------- */
 async function start() {

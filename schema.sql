@@ -188,6 +188,9 @@ insert into storage.buckets (id, name, public) values ('fotos', 'fotos', true) o
 drop policy if exists fotos_insert on storage.objects;
 create policy fotos_insert on storage.objects for insert to authenticated
   with check (bucket_id = 'fotos' and public.is_admin());
+drop policy if exists fotos_select on storage.objects;
+create policy fotos_select on storage.objects for select to authenticated
+  using (bucket_id = 'fotos' and public.is_admin());
 drop policy if exists fotos_update on storage.objects;
 create policy fotos_update on storage.objects for update to authenticated
   using (bucket_id = 'fotos' and public.is_admin());

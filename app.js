@@ -420,6 +420,7 @@ function playerModal(id) {
         <button class="btn primary" id="psave">Guardar</button></div>
     </form>`);
   let blob = null;
+  let pid = p?.id; // si algo falla a mitad, al reintentar se actualiza el mismo jugador (no se duplica)
   $('#pfile').onchange = async e => {
     const f = e.target.files[0]; if (!f) return;
     try { blob = await resizeImage(f); $('#prev').innerHTML = `<img class="av xl" src="${URL.createObjectURL(blob)}">`; }
@@ -436,13 +437,12 @@ function playerModal(id) {
     const btn = $('#psave'); btn.disabled = true; $('#perr').textContent = '';
     try {
       const row = { name: $('#pname').value.trim() };
-      let pid = p?.id;
       if (pid) await must(db.from('players').update(row).eq('id', pid));
       else pid = (await must(db.from('players').insert(row).select().single())).id;
       if (blob) {
-        const path = `${pid}.jpg`;
-        await must(db.storage.from('fotos').upload(path, blob, { upsert: true, contentType: 'image/jpeg' }));
-        const url = db.storage.from('fotos').getPublicUrl(path).data.publicUrl + '?v=' + Date.now();
+        const path = `${pid}-${Date.now()}.jpg`;
+        await must(db.storage.from('fotos').upload(path, blob, { contentType: 'image/jpeg' }));
+        const url = db.storage.from('fotos').getPublicUrl(path).data.publicUrl;
         await must(db.from('players').update({ photo_url: url }).eq('id', pid));
       }
       const mail = $('#pmail').value.trim().toLowerCase();

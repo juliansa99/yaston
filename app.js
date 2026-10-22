@@ -20,7 +20,7 @@ if (!cfg.SUPABASE_URL || !cfg.SUPABASE_ANON_KEY) {
 const db = supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
 
 const S = {
-  user: null, isAdmin: false, meId: null, tab: 'tabla', game: null, year: 'all',
+  user: null, isAdmin: false, meId: null, tab: 'tabla', game: null, year: 'all', sort: 'pts',
   week: null, board: [], plays: [], playId: null,
   players: [], emails: {}, matches: [], mp: [], mvp: [], totals: {}, myVotes: {}, unclaimed: [],
 };
@@ -129,8 +129,13 @@ function standings() {
   const H = history();
   const all = [...rows.values()];
   for (const r of all) r.st = streaks(H.get(r.p.id) || []);
-  const played = all.filter(r => r.pj > 0).sort((a, b) =>
-    b.pts - a.pts || b.g - a.g || b.mvp - a.mvp || a.pe - b.pe || a.p.name.localeCompare(b.p.name));
+  for (const r of all) r.pct = r.pj ? r.g / r.pj : null;
+  const byPts = (a, b) => b.pts - a.pts || b.g - a.g || b.mvp - a.mvp || a.pe - b.pe || a.p.name.localeCompare(b.p.name);
+  let played = all.filter(r => r.pj > 0).sort(byPts);
+  if (S.sort === 'avg') { // por promedio de victorias: primero los que jugaron al menos MIN partidos
+    const enough = played.filter(r => r.pj >= MIN).sort((a, b) => b.pct - a.pct || b.pj - a.pj || byPts(a, b));
+    played = [...enough, ...played.filter(r => r.pj < MIN)];
+  }
   const never = all.filter(r => r.pj === 0 && !r.p.guest).sort((a, b) => a.p.name.localeCompare(b.p.name));
   return { played, never };
 }
@@ -367,10 +372,11 @@ function mountGame() {
 function viewTabla() {
   const years = [...new Set(S.matches.map(m => m.played_on.slice(0, 4)))].sort().reverse();
   const { played, never } = standings();
-  const row = (r, i, dim) => `<tr class="${i === 0 && !dim ? 'top1' : ''} ${dim ? 'dim' : ''}">
+  const few = r => S.sort === 'avg' && r.pj > 0 && r.pj < MIN;
+  const row = (r, i, dim) => `<tr class="${i === 0 && !dim ? 'top1' : ''} ${dim ? 'dim' : ''} ${few(r) ? 'few' : ''}">
       <td class="pos">${dim ? '–' : i + 1}</td>
       <td class="l"><div class="pl">${av(r.p)}<span class="who"><span class="n">${esc(r.p.name)}</span><span class="tags">${r.p.guest ? '<span class="badge">invitado</span>' : ''}${r.st.cw >= 3 ? `<span class="badge hot" title="Racha de victorias">🔥${r.st.cw}</span>` : r.st.cl >= 3 ? `<span class="badge cold" title="Racha de derrotas">🥶${r.st.cl}</span>` : ''}</span></span></div></td>
-      <td>${r.pj}</td><td>${r.g}</td><td>${r.e}</td><td>${r.pe}</td><td>${r.mvp ? '⭐' + r.mvp : '–'}</td><td class="pts">${r.pts}</td></tr>`;
+      <td>${r.pj}</td><td>${r.g}</td><td>${r.e}</td><td>${r.pe}</td><td>${r.mvp ? '⭐' + r.mvp : '–'}</td><td class="avg">${r.pj ? Math.round(r.pct * 100) + '%' + (r.pj < MIN ? '*' : '') : '–'}</td><td class="pts">${r.pts}</td></tr>`;
   const played_n = S.matches.filter(m => m.result && (S.year === 'all' || m.played_on.startsWith(S.year))).length;
   return `
     <div class="section-title"><h2>Tabla de posiciones</h2>
@@ -379,10 +385,12 @@ function viewTabla() {
       </select></div></div>
     ${!S.players.length ? '<div class="empty">Todavía no hay jugadores cargados.</div>' : `
     <div class="table-wrap"><table class="tbl">
-      <thead><tr><th>#</th><th class="l">Jugador</th><th>PJ</th><th>G</th><th>E</th><th>P</th><th>MVP</th><th>Pts</th></tr></thead>
+      <thead><tr><th>#</th><th class="l">Jugador</th><th>PJ</th><th>G</th><th>E</th><th>P</th><th>MVP</th>
+        <th class="sortable ${S.sort === 'avg' ? 'on' : ''}" data-act="sort" data-s="avg" title="Ordenar por promedio de victorias">%${S.sort === 'avg' ? '▾' : ''}</th>
+        <th class="sortable ${S.sort === 'pts' ? 'on' : ''}" data-act="sort" data-s="pts" title="Ordenar por puntos">Pts${S.sort === 'pts' ? '▾' : ''}</th></tr></thead>
       <tbody>${played.map((r, i) => row(r, i)).join('')}${never.map(r => row(r, 0, true)).join('')}</tbody>
     </table></div>
-    <p class="legend">Ganado 3 pts · Empate 1 · Perdido 0. PJ: jugados · G/E/P: ganados/empatados/perdidos · ⭐ veces elegido jugador del partido. ${played_n} partido${played_n === 1 ? '' : 's'} jugado${played_n === 1 ? '' : 's'}.
+    <p class="legend">Ganado 3 pts · Empate 1 · Perdido 0. PJ: jugados · G/E/P: ganados/empatados/perdidos · ⭐ veces elegido jugador del partido · %: promedio de victorias (ganados ÷ jugados). Tocá <b>%</b> o <b>Pts</b> arriba para ordenar la tabla por promedio o por puntos. Al ordenar por promedio solo entran los que jugaron al menos ${MIN} partidos; los demás van al final, con * en el %. ${played_n} partido${played_n === 1 ? '' : 's'} jugado${played_n === 1 ? '' : 's'}.
     🔥 3 o más victorias seguidas · 🥶 3 o más derrotas seguidas. Los de abajo (en gris) son parte del grupo pero todavía no jugaron.</p>`}`;
 }
 
@@ -664,6 +672,7 @@ function matchModal(id) {
 const actions = {
   login: () => db.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname } }),
   logout: async () => { await db.auth.signOut(); S.user = null; S.isAdmin = false; S.meId = null; S.myVotes = {}; S.emails = {}; render(); },
+  sort: el => { S.sort = el.dataset.s; render(); },
   game: () => { S.game = null; S.playId = null; render(); scrollTo(0, 0); },
   play: async () => {
     try { S.playId = await must(db.rpc('start_play', { p_game: currentGame().id })); S.game = currentGame().id; await loadGameData(); render(); scrollTo(0, 0); }

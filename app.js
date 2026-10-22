@@ -14,7 +14,10 @@ const APERTURA_2026 = [
   ['Yanu', 6, 3], ['Niesa', 2, 3], ['Gorbi', 1.5, 3], ['Primo', 0.5, 1],
 ].map(([n, pts, asist]) => ({ n, pts, asist, prom: pts / asist }));
 // Nombre en la planilla -> nombre en el Plantel (solo cuando es el mismo jugador con otro nombre)
-const ALIAS = { 'chiqui masla': 'masla' };
+const ALIAS = {
+  'chiqui masla': 'masla', 'tomer': 'tota', 'langer': 'longa', 'gueler': 'marto',
+  'brian': 'braiton', 'yanu': 'yannu', 'niesa': 'zalito',
+};
 const TORNEOS = [
   { id: 'clausura-2026', name: 'Clausura 2026', full: 'Yaston League Clausura', from: '2026-06-16', to: '2026-12-31', kind: 'vivo', rules: { W: 3, D: 1, L: 0 } },
   { id: 'apertura-2026', name: 'Apertura 2026', full: 'Yaston League Apertura', from: '2026-01-01', to: '2026-06-15', kind: 'fija', rules: { W: 4, D: 2, L: 1 }, partidos: 16 },

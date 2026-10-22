@@ -340,3 +340,40 @@ nav.tabs button { font-size: .7rem; }
 .sim-head { font-weight: 700; margin: 12px 0 8px; }
 .sim-facts { margin: 0 0 10px; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: .88rem; }
 @media (prefers-reduced-motion: reduce) { .simprog i { animation: none; width: 100%; } }
+
+/* ---------- próximo partido ---------- */
+.gamebanner { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 0 0 14px; padding: 12px 14px; border-radius: var(--radius); background: rgba(61,220,132,.12); border: 1px solid rgba(61,220,132,.4); }
+.gamebanner.live { background: rgba(255,107,107,.15); border-color: rgba(255,107,107,.5); }
+.gamebanner b { font-size: 1rem; }
+/* ---------- crónica ---------- */
+.chron { margin-top: 12px; padding: 12px; border-radius: 12px; background: rgba(255,255,255,.05); border: 1px solid var(--line); }
+.chron h4 { margin: 0 0 6px; font-size: .9rem; }
+.chron p { margin: 0 0 8px; }
+/* ---------- carrera y chances ---------- */
+.race-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 8px; }
+.seg2 { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.seg2 button { background: transparent; border: 0; padding: 6px 12px; font-size: .8rem; color: var(--mut); }
+.seg2 button.on { background: var(--accent); color: var(--accent-txt); font-weight: 700; }
+.race-svg { width: 100%; height: auto; display: block; }
+.rgrid { stroke: rgba(255,255,255,.12); stroke-width: 1; }
+.rtxt { fill: var(--mut); font-size: 9px; }
+.rlabel { font-size: 10px; font-weight: 700; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.chip { --c: transparent; border: 1px solid var(--line); background: transparent; color: var(--mut); border-radius: 999px; padding: 4px 10px; font-size: .75rem; }
+.chip.on { color: var(--txt); border-color: var(--c); box-shadow: inset 0 0 0 1px var(--c); }
+.odd { display: flex; align-items: center; gap: 10px; padding: 5px 0; }
+.odd .pl { width: 38%; min-width: 0; gap: 8px; }
+.odd .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .85rem; font-weight: 600; }
+.odd-bar { flex: 1; height: 10px; border-radius: 99px; background: rgba(255,255,255,.1); overflow: hidden; }
+.odd-bar i { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
+.odd b { width: 38px; text-align: right; font-variant-numeric: tabular-nums; }
+/* ---------- perfil ---------- */
+.perfil-head { display: flex; align-items: center; gap: 16px; }
+.perfil-head h2 { font-size: 1.5rem; }
+.timeline { display: flex; flex-direction: column; gap: 2px; }
+.tl { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-top: 1px solid var(--line); font-size: .9rem; }
+.tl:first-child { border-top: 0; }
+.tl-date { color: var(--mut); width: 42px; font-variant-numeric: tabular-nums; }
+.tl-chip { width: 24px; height: 24px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; font-size: .75rem; color: #101010; }
+.tl-chip.w { background: var(--win); } .tl-chip.d { background: var(--draw); } .tl-chip.l { background: var(--loss); }
+.me { cursor: pointer; }

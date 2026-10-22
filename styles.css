@@ -324,3 +324,19 @@ nav.tabs button { font-size: .7rem; }
   .tbl.apertura th:nth-child(3), .tbl.apertura th:nth-child(4) { width: 44px; }
   .tbl.apertura th:nth-child(5) { width: 50px; }
 }
+
+/* ---------- simulador ---------- */
+.simbox { margin-top: 12px; padding: 12px; border-radius: 12px; background: rgba(120,90,255,.12); border: 1px solid rgba(160,140,255,.4); }
+.simbox h4 { margin: 0 0 10px; font-size: .9rem; }
+.simrun { font-size: .9rem; color: var(--mut); }
+.simprog { height: 8px; border-radius: 99px; background: rgba(255,255,255,.12); margin-top: 10px; overflow: hidden; }
+.simprog i { display: block; height: 100%; width: 0; background: #a99bff; animation: simfill 1.6s ease-out forwards; }
+@keyframes simfill { to { width: 100%; } }
+.simbar { display: flex; gap: 3px; height: 34px; border-radius: 10px; overflow: hidden; font-size: .8rem; font-weight: 800; color: #101010; }
+.simbar span { display: flex; align-items: center; justify-content: center; min-width: 40px; padding: 0 2px; white-space: nowrap; font-size: .75rem; }
+.simbar .a { background: var(--a); }
+.simbar .d { background: #cfd8dc; }
+.simbar .b { background: var(--b); }
+.sim-head { font-weight: 700; margin: 12px 0 8px; }
+.sim-facts { margin: 0 0 10px; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: .88rem; }
+@media (prefers-reduced-motion: reduce) { .simprog i { animation: none; width: 100%; } }

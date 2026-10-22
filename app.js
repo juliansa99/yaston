@@ -42,7 +42,7 @@ const db = supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
 
 const S = {
   user: null, isAdmin: false, meId: null, tab: 'tabla', game: null, torneo: null, sort: 'pts',
-  week: null, board: [], plays: [], playId: null,
+  sims: {}, week: null, board: [], plays: [], playId: null,
   players: [], emails: {}, matches: [], mp: [], mvp: [], totals: {}, myVotes: {}, unclaimed: [],
 };
 
@@ -511,12 +511,93 @@ function voteBox(m) {
     <div style="margin-top:8px">${info}</div></div>`;
 }
 
+
+/* ---------------- simulador de partido ---------------- */
+const SIM_RUNS = 10000;
+function rngFrom(str) { // número aleatorio con semilla: el mismo partido da siempre la misma simulación
+  let h = 1779033703 ^ str.length;
+  for (let i = 0; i < str.length; i++) { h = Math.imul(h ^ str.charCodeAt(i), 3432918353); h = (h << 13) | (h >>> 19); }
+  let a = h;
+  return () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+function simulate(m) {
+  const H = history(), ev = mvpEvents(), pairs = pairStats();
+  const ids = { A: [], B: [] };
+  for (const x of S.mp.filter(x => x.match_id === m.id)) ids[x.team].push(x.player_id);
+  if (!ids.A.length || !ids.B.length) return null;
+  const K = 4; // "partidos de prueba": a quien jugó poco se lo acerca a 50% en vez de creerle un 100% de un solo partido
+  const info = id => {
+    const l = H.get(id) || [], g = l.filter(x => x.out === 'W').length, e = l.filter(x => x.out === 'D').length;
+    const st = streaks(l), stars = ev.filter(x => x.pid === id).length;
+    let s = (g + 0.5 * e + K * 0.5) / (l.length + K);
+    s += Math.min(0.06, (l.length ? stars / l.length : 0) * 0.1);
+    if (st.cw >= 3) s += 0.02;
+    if (st.cl >= 3) s -= 0.02;
+    return { id, p: player(id), pj: l.length, g, s, st, stars, pct: l.length ? g / l.length : null };
+  };
+  const build = key => {
+    const ps = ids[key].map(info), set = new Set(ids[key]);
+    const base = ps.reduce((a, x) => a + x.s, 0) / ps.length;
+    const duos = pairs.filter(x => x.n >= MIN && set.has(x.ids[0]) && set.has(x.ids[1]));
+    const chem = duos.length ? duos.reduce((a, x) => a + (x.w / x.n - 0.5), 0) / duos.length * 0.15 : 0;
+    const falta = Math.max(0, 5 - ps.length) * 0.05; // jugar con menos gente pesa
+    return { key, ps, duos, strength: base + chem - falta, base };
+  };
+  const A = build('A'), B = build('B');
+  const rand = rngFrom(m.id + '|' + SIM_RUNS);
+  const normal = () => Math.sqrt(-2 * Math.log(1 - rand())) * Math.cos(2 * Math.PI * rand());
+  let wa = 0, wb = 0, d = 0;
+  for (let i = 0; i < SIM_RUNS; i++) {
+    const diff = (A.strength + 0.2 * normal()) - (B.strength + 0.2 * normal()); // el fútbol 5 tiene mucho de azar
+    if (Math.abs(diff) < 0.02) d++; else if (diff > 0) wa++; else wb++;
+  }
+  return { A, B, pA: wa / SIM_RUNS, pD: d / SIM_RUNS, pB: wb / SIM_RUNS };
+}
+function simFacts(r) {
+  const out = [], nm = x => esc(x.p?.name || '?');
+  const pct1 = x => x.pct == null ? 'debuta' : `${Math.round(x.pct * 100)}% de victorias`;
+  for (const T of [r.A, r.B]) {
+    const played = T.ps.filter(x => x.pj > 0).sort((a, b) => b.s - a.s);
+    if (played[0]) out.push(`⭐ La figura del Equipo ${T.key}: <b>${nm(played[0])}</b> (${pct1(played[0])}).`);
+    const duo = [...T.duos].sort((a, b) => b.w / b.n - a.w / a.n || b.n - a.n)[0];
+    if (duo) out.push(`🤝 En el Equipo ${T.key}, <b>${esc(duo.ids.map(i => player(i)?.name || '?').join(' y '))}</b> ganaron ${duo.w} de ${duo.n} juntos.`);
+    for (const x of T.ps) {
+      if (x.st.cw >= 3) out.push(`🔥 <b>${nm(x)}</b> (Equipo ${T.key}) llega con ${x.st.cw} victorias seguidas.`);
+      else if (x.st.cl >= 3) out.push(`🥶 <b>${nm(x)}</b> (Equipo ${T.key}) viene con ${x.st.cl} derrotas seguidas.`);
+    }
+  }
+  const deb = [...r.A.ps, ...r.B.ps].filter(x => x.pj === 0);
+  if (deb.length) out.push(`🆕 ${deb.length === 1 ? 'Debuta' : 'Debutan'}: <b>${deb.map(nm).join(', ')}</b>. Sin historial, se los toma como una incógnita.`);
+  return out;
+}
+function simHeadline(r) {
+  const gap = Math.abs(r.pA - r.pB), fav = r.pA >= r.pB ? 'A' : 'B', fp = Math.round(Math.max(r.pA, r.pB) * 100);
+  if (gap < 0.06) return `Partidazo parejo: los números no se animan a elegir. Se define por detalles.`;
+  if (gap < 0.2) return `El Equipo ${fav} llega apenas favorito (${fp}% de ganar), pero es un partido para cualquiera.`;
+  if (gap < 0.4) return `El Equipo ${fav} es favorito (${fp}% de ganar). Al otro le toca sacar un batacazo.`;
+  return `Paliza anunciada: el Equipo ${fav} tiene ${fp}% de ganar. El otro equipo necesita un milagro.`;
+}
+function simBox(m) {
+  const st = S.sims[m.id];
+  if (!st) return `<div class="simbox"><button class="btn sm" data-act="simulate" data-id="${m.id}">🔮 Simular cómo va a salir</button></div>`;
+  if (st === 'run') return `<div class="simbox"><h4>🔮 Simulador del partido</h4><div class="simrun">Simulando ${SIM_RUNS.toLocaleString('es-AR')} partidos…<div class="simprog"><i></i></div></div></div>`;
+  const r = simulate(m);
+  if (!r) return '';
+  const pa = Math.round(r.pA * 100), pd = Math.round(r.pD * 100), pb = Math.max(0, 100 - pa - pd);
+  return `<div class="simbox"><h4>🔮 Simulador del partido</h4>
+    <div class="simbar"><span class="a" style="flex:${Math.max(pa, 4)}">A ${pa}%</span><span class="d" style="flex:${Math.max(pd, 4)}">E ${pd}%</span><span class="b" style="flex:${Math.max(pb, 4)}">B ${pb}%</span></div>
+    <p class="sim-head">${simHeadline(r)}</p>
+    <ul class="sim-facts">${simFacts(r).map(x => `<li>${x}</li>`).join('')}</ul>
+    <small class="muted">Se simularon ${SIM_RUNS.toLocaleString('es-AR')} partidos con las victorias, estrellas, rachas y duplas de cada uno. Es solo un juego, no es oficial.</small></div>`;
+}
+
 function matchCard(m) {
   const res = m.result === 'A' ? 'Ganó el Equipo A' : m.result === 'B' ? 'Ganó el Equipo B' : m.result === 'D' ? 'Empate' : 'Sin resultado';
   const hasParts = S.mp.some(x => x.match_id === m.id);
   return `<div class="card match">
     <div class="head"><div class="date">${fmtDate(m.played_on)}</div><span class="res ${m.result || ''}">${res}</span></div>
     <div class="teams">${teamHtml(m, 'A')}${teamHtml(m, 'B')}</div>
+    ${hasParts && !m.result ? simBox(m) : ''}
     ${hasParts ? (m.voting_open ? voteBox(m) : mvpBox(m)) : ''}
     ${S.isAdmin ? `<div class="admin-row">
       <button class="btn sm" data-act="edit-match" data-id="${m.id}">✏️ Editar</button>
@@ -755,6 +836,7 @@ function matchModal(id) {
 const actions = {
   login: () => db.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname } }),
   logout: async () => { await db.auth.signOut(); S.user = null; S.isAdmin = false; S.meId = null; S.myVotes = {}; S.emails = {}; render(); },
+  simulate: el => { const id = el.dataset.id; S.sims[id] = 'run'; render(); setTimeout(() => { S.sims[id] = 'done'; render(); }, 1700); },
   sort: el => { S.sort = el.dataset.s; render(); },
   game: () => { S.game = null; S.playId = null; render(); scrollTo(0, 0); },
   play: async () => {

@@ -198,3 +198,63 @@ create policy fotos_update on storage.objects for update to authenticated
 drop policy if exists fotos_delete on storage.objects;
 create policy fotos_delete on storage.objects for delete to authenticated
   using (bucket_id = 'fotos' and public.is_admin());
+
+-- 5) JUEGOS: un juego por semana, hasta 3 intentos por cuenta de Google, y tabla semanal
+create table if not exists public.game_plays (
+  id          uuid primary key default gen_random_uuid(),
+  game        text not null,
+  week        date not null,                         -- lunes de la semana (hora de Buenos Aires)
+  user_id     uuid not null default auth.uid(),
+  player_id   uuid not null references public.players(id) on delete cascade,
+  goals       int check (goals between 0 and 5),
+  created_at  timestamptz not null default now(),
+  finished_at timestamptz
+);
+alter table public.game_plays enable row level security;
+drop policy if exists plays_own on public.game_plays;
+create policy plays_own on public.game_plays for select to authenticated using (user_id = auth.uid());
+
+create or replace function public.current_week() returns date
+language sql stable set search_path = public as $fn$
+  select (date_trunc('week', now() at time zone 'America/Argentina/Buenos_Aires'))::date
+$fn$;
+
+create or replace function public.start_play(p_game text) returns uuid
+language plpgsql security definer set search_path = public as $fn$
+declare
+  me uuid := public.my_player_id();
+  wk date := public.current_week();
+  n int;
+  pid uuid;
+begin
+  if auth.uid() is null then raise exception 'Tenés que entrar con Google para jugar'; end if;
+  if me is null then raise exception 'Primero elegí quién sos (pestaña Plantel)'; end if;
+  select count(*) into n from public.game_plays where user_id = auth.uid() and game = p_game and week = wk;
+  if n >= 3 then raise exception 'Ya usaste tus 3 intentos de esta semana'; end if;
+  insert into public.game_plays (game, week, user_id, player_id) values (p_game, wk, auth.uid(), me) returning id into pid;
+  return pid;
+end
+$fn$;
+
+create or replace function public.finish_play(p_play uuid, p_goals int) returns void
+language plpgsql security definer set search_path = public as $fn$
+begin
+  update public.game_plays
+     set goals = greatest(0, least(5, p_goals)), finished_at = now()
+   where id = p_play and user_id = auth.uid() and goals is null;
+  if not found then raise exception 'Ese intento no es válido o ya terminó'; end if;
+end
+$fn$;
+
+create or replace function public.game_board(p_game text)
+returns table (player_id uuid, best int, total int, tries int)
+language sql stable security definer set search_path = public as $fn$
+  select g.player_id, max(coalesce(g.goals, 0))::int, sum(coalesce(g.goals, 0))::int, count(*)::int
+  from public.game_plays g
+  where g.game = p_game and g.week = public.current_week()
+  group by g.player_id
+$fn$;
+
+revoke all on function public.current_week(), public.game_board(text), public.start_play(text), public.finish_play(uuid, int) from public, anon;
+grant execute on function public.current_week(), public.game_board(text) to anon, authenticated;
+grant execute on function public.start_play(text), public.finish_play(uuid, int) to authenticated;

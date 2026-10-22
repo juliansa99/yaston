@@ -1,7 +1,6 @@
 // Juego "Pateale Penales a Gure": tanda de 5 penales, el arquero es la foto del jugador.
 (() => {
 'use strict';
-const KEY = 'yaston-penales-record';
 const SHOTS = 5;
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -11,9 +10,6 @@ const GOAL = { x1: 9, x2: 91, y1: 7, y2: 39 };   // el arco, en % de la cancha
 const REST = { x: 50, y: 24 };                    // dónde espera el arquero
 const BALL = { x: 50, y: 84 };                    // el punto del penal
 
-function readRecord() { try { return Number(localStorage.getItem(KEY)) || 0; } catch { return 0; } }
-function saveRecord(n) { try { localStorage.setItem(KEY, String(n)); } catch { /* sin storage */ } }
-
 function mount(root, opts) {
   const name = opts.name || 'Gure';
   const face = opts.photo
@@ -21,7 +17,7 @@ function mount(root, opts) {
     : `<span class="pen-face pen-initial">${esc(name.slice(0, 1).toUpperCase())}</span>`;
   root.innerHTML = `<div class="pen">
     <div class="pen-head">
-      <div><b>Pateale Penales a ${esc(name)}</b><div class="muted small">Tocá el arco para patear. Son ${SHOTS} penales.</div></div>
+      <div><b>Pateale Penales a ${esc(name)}</b><div class="muted small">Tocá el arco para patear. Son ${SHOTS} penales.</div><div class="small pen-try" id="pen-try"></div></div>
       <div class="pen-score"><b id="pen-goals">0</b><span>goles</span></div>
     </div>
     <div class="pen-stage" id="pen-stage">
@@ -37,6 +33,8 @@ function mount(root, opts) {
   const $ = id => root.querySelector('#' + id);
   const stage = $('pen-stage'), keeper = $('pen-keeper'), ball = $('pen-ball'), msg = $('pen-msg'), react = $('pen-react');
   let shots = 0, goals = 0, busy = false;
+  const tryLabel = () => { const t = opts.tryLabel?.(); $('pen-try').textContent = t || ''; };
+  tryLabel();
 
   const place = (el, x, y, extra = '') => { el.style.left = x + '%'; el.style.top = y + '%'; el.style.transform = `translate(-50%, -50%) ${extra}`; };
   const reset = () => {
@@ -49,10 +47,11 @@ function mount(root, opts) {
   };
   reset();
 
-  function end() {
-    const record = Math.max(readRecord(), goals);
-    const newRecord = goals > readRecord();
-    saveRecord(record);
+  async function end() {
+    let saveErr = '';
+    try { await opts.onFinish?.(goals); } catch (e) { saveErr = e.message || 'No se pudo guardar tu resultado'; }
+    if (!root.isConnected) return;
+    const left = opts.attemptsLeft?.() ?? 0, best = Math.max(goals, opts.best?.() ?? 0);
     const text = [
       `${name} te dejó en cero. Mejor volvé al truco.`,
       `${name} todavía manda.`, `${name} todavía manda.`,
@@ -63,14 +62,19 @@ function mount(root, opts) {
     const box = $('pen-end');
     box.classList.remove('hidden');
     box.innerHTML = `<div class="pen-final"><b>${goals} de ${SHOTS}</b><span>${esc(text)}</span>
-      <small>${newRecord ? '🏆 ¡Nuevo récord!' : `Tu récord: ${record} de ${SHOTS}`}</small>
-      <button class="btn primary" id="pen-again">Jugar de nuevo</button></div>`;
-    $('pen-again').onclick = () => {
+      ${saveErr ? `<small class="pen-err">${esc(saveErr)}</small>` : `<small>Tu mejor de la semana: ${best} de ${SHOTS}</small>`}
+      ${left > 0 ? `<button class="btn primary" id="pen-again">Jugar de nuevo (te quedan ${left})</button>`
+        : '<small>Ya usaste tus 3 intentos de esta semana.</small>'}
+      <button class="btn ghost" id="pen-exit">Ver la tabla</button></div>`;
+    $('pen-exit').onclick = () => opts.onExit?.();
+    if (left > 0) $('pen-again').onclick = async () => {
+      $('pen-again').disabled = true;
+      if (!(await opts.onAgain?.())) { $('pen-again').disabled = false; return; }
       shots = 0; goals = 0; busy = false;
       $('pen-goals').textContent = '0';
       root.querySelectorAll('#pen-dots i').forEach(i => { i.className = ''; });
       box.classList.add('hidden'); box.innerHTML = '';
-      reset();
+      tryLabel(); reset();
     };
   }
 
@@ -108,7 +112,7 @@ function mount(root, opts) {
       shots++;
       setTimeout(() => {
         if (!root.isConnected) return;
-        if (shots >= SHOTS) return end();
+        if (shots >= SHOTS) { end(); return; }
         reset(); busy = false;
       }, 1300);
     }, 560);

@@ -5,6 +5,11 @@ const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const app = $('#app');
 const PTS = { W: 3, D: 1, L: 0 };
+const MAX_TRIES = 3;
+// Un juego por semana. Cada entrada rige desde el lunes indicado; si no hay uno nuevo, sigue el último.
+const WEEKLY_GAMES = [
+  { id: 'penales', from: '2026-10-19', title: 'Pateale Penales a Gure', blurb: 'Tanda de 5 penales. Tocá el arco y fijate si Gure la ataja.' },
+];
 
 if (!cfg.SUPABASE_URL || !cfg.SUPABASE_ANON_KEY) {
   app.innerHTML = `<div class="center-screen"><div class="card setup">
@@ -16,6 +21,7 @@ const db = supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
 
 const S = {
   user: null, isAdmin: false, meId: null, tab: 'tabla', game: null, year: 'all',
+  week: null, board: [], plays: [], playId: null,
   players: [], emails: {}, matches: [], mp: [], mvp: [], totals: {}, myVotes: {}, unclaimed: [],
 };
 
@@ -68,6 +74,7 @@ async function loadAll() {
   S.myVotes = Object.fromEntries(votes.map(v => [v.match_id, v.voted_for]));
   S.emails = emails ? Object.fromEntries(emails.map(e => [e.player_id, e.email])) : {};
   S.unclaimed = S.user && !meId ? await must(db.rpc('unclaimed_players')) : [];
+  await loadGameData();
 }
 
 function maybeClaim() {
@@ -75,6 +82,25 @@ function maybeClaim() {
   try { skipped = sessionStorage.getItem('yaston-skip-claim') === '1'; } catch { /* sin storage */ }
   if (S.user && !S.meId && S.unclaimed.length && !skipped && !$('#modal-root .overlay')) claimModal();
 }
+
+function currentGame() {
+  const wk = S.week || '0000';
+  return [...WEEKLY_GAMES].reverse().find(g => g.from <= wk) || WEEKLY_GAMES[WEEKLY_GAMES.length - 1];
+}
+async function loadGameData() {
+  S.week = await must(db.rpc('current_week'));
+  const id = currentGame().id;
+  const [board, plays] = await Promise.all([
+    must(db.rpc('game_board', { p_game: id })),
+    S.user ? must(db.from('game_plays').select('id,goals').eq('game', id).eq('week', S.week)) : [],
+  ]);
+  S.board = board; S.plays = plays;
+}
+const weekLabel = wk => {
+  const d = new Date(wk + 'T12:00:00'), e = new Date(d); e.setDate(d.getDate() + 6);
+  const m = x => x.toLocaleDateString('es-AR', { month: 'long' });
+  return d.getMonth() === e.getMonth() ? `${d.getDate()} al ${e.getDate()} de ${m(e)}` : `${d.getDate()} de ${m(d)} al ${e.getDate()} de ${m(e)}`;
+};
 
 async function refresh() {
   try { await loadAll(); render(); maybeClaim(); } catch (e) { toast(e.message || 'Error al cargar', true); }
@@ -280,23 +306,62 @@ function render() {
 }
 
 function viewJuegos() {
-  if (S.game === 'penales') {
+  const g = currentGame();
+  if (S.game === g.id && S.playId) {
     return `<div class="section-title"><button class="btn sm ghost" data-act="game" data-g="">← Juegos</button></div><div id="game-root"></div>`;
   }
+  const used = S.plays.length, left = Math.max(0, MAX_TRIES - used);
+  const best = S.plays.reduce((m, x) => Math.max(m, x.goals ?? 0), 0);
   const gure = S.players.find(p => !p.guest && p.name.trim().toLowerCase() === 'gure');
+  let cta;
+  if (!S.user) cta = '<button class="btn google sm" data-act="login">Entrar con Google para jugar</button>';
+  else if (!S.meId) cta = '<button class="btn primary" data-act="claim">Elegí quién sos para jugar</button>';
+  else if (!left) cta = '<span class="muted small">Ya usaste tus 3 intentos. Se renuevan el lunes.</span>';
+  else cta = `<button class="btn primary" data-act="play">${used ? 'Jugar otra vez' : 'Jugar'}</button>`;
+  const dots = S.user && S.meId ? `<div class="tries">${Array.from({ length: MAX_TRIES }, (_, k) => `<i class="${k < used ? 'used' : ''}"></i>`).join('')}
+      <span class="muted small">${left ? `Te quedan ${left} de ${MAX_TRIES} intentos` : 'Sin intentos'}${used ? ` · tu mejor: ${best} de 5` : ''}</span></div>` : '';
+  const rows = S.board.map(b => ({ ...b, p: player(b.player_id) })).filter(r => r.p)
+    .sort((a, b) => b.best - a.best || b.total - a.total || a.tries - b.tries || a.p.name.localeCompare(b.p.name));
   return `<div class="section-title"><h2>Juegos</h2></div>
-    <button class="gamecard" data-act="game" data-g="penales">
-      <span class="gc-art">${gure ? av(gure, 'lg') : '<span class="av lg">G</span>'}<span class="gc-ball">⚽</span></span>
-      <span class="gc-txt"><b>Pateale Penales a Gure</b><span class="muted small">Tanda de 5 penales. Tocá el arco y fijate si Gure la ataja.</span></span>
-      <span class="gc-go">Jugar ›</span>
-    </button>
-    <p class="legend">Pronto, más juegos.</p>`;
+    ${!S.user ? `<div class="card notice"><b>🔒 Hay que entrar con Google</b>
+      <div class="muted small" style="margin:4px 0 10px">Para jugar y para votar al jugador del partido tenés que entrar con tu Gmail. Para ver la tabla no hace falta.</div>
+      <button class="btn google sm" data-act="login">Entrar con Google</button></div>` : ''}
+    <div class="card weekly">
+      <div class="eyebrow">Juego de la semana · ${weekLabel(S.week)}</div>
+      <div class="weekly-main">
+        <span class="gc-art">${gure ? av(gure, 'lg') : '<span class="av lg">G</span>'}<span class="gc-ball">⚽</span></span>
+        <div class="gc-txt"><b>${esc(g.title)}</b><span class="muted small">${esc(g.blurb)}</span></div>
+      </div>
+      ${dots}
+      <div class="weekly-cta">${cta}</div>
+      <p class="legend" style="margin:10px 0 0">Hay un juego nuevo por semana. Cada cuenta de Google juega hasta ${MAX_TRIES} veces y en la tabla cuenta el mejor intento.</p>
+    </div>
+    <div class="section-title"><h2>Tabla de la semana</h2></div>
+    ${rows.length ? `<div class="table-wrap"><table class="tbl board"><thead><tr><th>#</th><th class="l">Jugador</th><th>Mejor</th><th>Total</th><th>Int.</th></tr></thead><tbody>
+      ${rows.map((r, i) => `<tr class="${i === 0 ? 'top1' : ''} ${r.p.id === S.meId ? 'mine' : ''}"><td class="pos">${i + 1}</td>
+        <td class="l"><div class="pl">${av(r.p)}<span class="who"><span class="n">${esc(r.p.name)}</span></span></div></td>
+        <td class="pts">${r.best}<small>/5</small></td><td>${r.total}</td><td>${r.tries}/${MAX_TRIES}</td></tr>`).join('')}</tbody></table></div>
+      <p class="legend">Mejor: goles del mejor intento (de 5 penales). Total: goles sumando todos tus intentos. Int.: intentos usados.</p>`
+      : '<div class="empty">Todavía nadie jugó esta semana. ¡Sé el primero!</div>'}`;
 }
 
 function mountGame() {
-  if (S.tab !== 'juegos' || S.game !== 'penales' || !$('#game-root')) return;
+  const g = currentGame();
+  if (S.tab !== 'juegos' || S.game !== g.id || !S.playId || !$('#game-root')) return;
   const gure = S.players.find(p => !p.guest && p.name.trim().toLowerCase() === 'gure');
-  window.YastonPenales?.mount($('#game-root'), { name: gure?.name || 'Gure', photo: gure?.photo_url || null });
+  const left = () => Math.max(0, MAX_TRIES - S.plays.length);
+  window.YastonPenales?.mount($('#game-root'), {
+    name: gure?.name || 'Gure', photo: gure?.photo_url || null,
+    tryLabel: () => `Intento ${S.plays.length} de ${MAX_TRIES}`,
+    attemptsLeft: left,
+    best: () => S.plays.reduce((m, x) => Math.max(m, x.goals ?? 0), 0),
+    onFinish: async goals => { const id = S.playId; S.playId = null; await must(db.rpc('finish_play', { p_play: id, p_goals: goals })); await loadGameData(); },
+    onAgain: async () => {
+      try { S.playId = await must(db.rpc('start_play', { p_game: g.id })); await loadGameData(); return true; }
+      catch (e) { toast(e.message, true); return false; }
+    },
+    onExit: () => { S.game = null; S.playId = null; render(); scrollTo(0, 0); },
+  });
 }
 
 function viewTabla() {
@@ -344,7 +409,7 @@ function voteBox(m) {
   const total = S.totals[m.id] || 0;
   const info = `<div class="muted small">${total}/${parts.length} ya votaron</div>`;
   const mine = parts.find(x => x.player_id === S.meId);
-  if (!S.user) return `<div class="votebox"><h4>🗳️ Votación abierta</h4><div class="muted small">Para votar tenés que entrar con tu Gmail.</div><div style="margin:10px 0"><button class="btn sm primary" data-act="login">Entrar con Google</button></div>${info}</div>`;
+  if (!S.user) return `<div class="votebox"><h4>🗳️ Votación abierta</h4><div class="muted small">Para votar al jugador del partido tenés que entrar con Google.</div><div style="margin:10px 0"><button class="btn sm primary" data-act="login">Entrar con Google</button></div>${info}</div>`;
   if (!S.meId) return `<div class="votebox"><h4>🗳️ Votación abierta</h4><div class="muted small">Todavía no elegiste quién sos.</div><div style="margin:10px 0"><button class="btn sm primary" data-act="claim">Elegir quién soy</button></div>${info}</div>`;
   if (!mine) return `<div class="votebox"><h4>🗳️ Votación abierta</h4><div class="muted small">Solo votan los que jugaron este partido.</div>${info}</div>`;
   const myVote = S.myVotes[m.id];
@@ -372,6 +437,9 @@ function matchCard(m) {
 function viewPartidos() {
   return `<div class="section-title"><h2>Partidos</h2>
       ${S.isAdmin ? '<button class="btn primary sm" data-act="new-match">+ Nuevo partido</button>' : ''}</div>
+    ${!S.user ? `<div class="card notice"><b>🔒 Para votar hay que entrar con Google</b>
+      <div class="muted small" style="margin:4px 0 10px">Para votar al jugador del partido tenés que entrar con tu Gmail. Mirar los partidos no hace falta.</div>
+      <button class="btn google sm" data-act="login">Entrar con Google</button></div>` : ''}
     ${S.matches.length ? S.matches.map(matchCard).join('') : `<div class="empty">Todavía no se cargó ningún partido.${S.isAdmin ? '<br>Tocá "+ Nuevo partido" para armar los equipos A y B.' : ''}</div>`}`;
 }
 
@@ -596,8 +664,12 @@ function matchModal(id) {
 const actions = {
   login: () => db.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname } }),
   logout: async () => { await db.auth.signOut(); S.user = null; S.isAdmin = false; S.meId = null; S.myVotes = {}; S.emails = {}; render(); },
-  game: el => { S.game = el.dataset.g || null; render(); scrollTo(0, 0); },
-  tab: el => { S.tab = el.dataset.tab; render(); scrollTo(0, 0); },
+  game: () => { S.game = null; S.playId = null; render(); scrollTo(0, 0); },
+  play: async () => {
+    try { S.playId = await must(db.rpc('start_play', { p_game: currentGame().id })); S.game = currentGame().id; await loadGameData(); render(); scrollTo(0, 0); }
+    catch (e) { S.playId = null; toast(e.message, true); refresh(); }
+  },
+  tab: el => { S.tab = el.dataset.tab; S.game = null; S.playId = null; render(); scrollTo(0, 0); },
   year: el => { S.year = el.value; render(); },
   vote: async el => {
     try { await must(db.rpc('cast_vote', { p_match: el.dataset.m, p_for: el.dataset.p })); toast('Voto registrado 🗳️'); refresh(); }

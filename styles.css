@@ -274,3 +274,19 @@ nav.tabs button { font-size: .7rem; }
 .pen-final b { font-size: 2rem; color: var(--accent); }
 .pen-final small { color: var(--mut); }
 @media (prefers-reduced-motion: reduce) { .pen-msg { transition: none; } }
+
+/* ---------- juego de la semana ---------- */
+.notice { border-color: rgba(255,210,63,.45); background: rgba(255,210,63,.08); }
+.btn.google.sm { padding: 8px 14px; font-size: .9rem; }
+.weekly { display: flex; flex-direction: column; gap: 12px; }
+.eyebrow { font-size: .7rem; text-transform: uppercase; letter-spacing: .08em; color: var(--accent); font-weight: 700; }
+.weekly-main { display: flex; align-items: center; gap: 14px; }
+.tries { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tries i { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--accent); background: transparent; }
+.tries i.used { background: rgba(255,255,255,.18); border-color: var(--line); }
+.weekly-cta { display: flex; }
+.tbl.board th:nth-child(3), .tbl.board th:nth-child(4), .tbl.board th:nth-child(5) { width: 54px; }
+.tbl.board td.pts small { color: var(--mut); font-weight: 400; font-size: .7rem; }
+.tbl.board tr.mine td { background: rgba(255,210,63,.1); }
+.pen-try { color: var(--accent); margin-top: 2px; }
+.pen-err { color: var(--loss) !important; }

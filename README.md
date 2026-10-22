@@ -10,6 +10,7 @@ Web (sin instalar nada, HTML + JS) con:
 - **Premios** (se calculan solos): Más victorioso, Mejor promedio y Derrotado (el promedio cuenta desde 3 partidos), Fantasma (el que no viene nunca), Jugador del mes (más ⭐), mejor y peor racha histórica, Dupla letal y Dupla maldita, y un ranking de estrellas. En la tabla se marca 🔥 / 🥶 a quien lleva 3 o más victorias o derrotas seguidas.
 - **Historial**: en el Plantel, el botón *Historial* de cada jugador muestra sus números, su mejor dupla, su bestia negra, y cuántas veces ganaron/perdieron juntos o enfrentados contra cualquier otro.
 - **¿Quién sos?**: la primera vez que alguien entra con Google, la página le pide elegir su nombre de la lista (solo aparecen los que nadie eligió todavía). Queda vinculado a ese Gmail y ya puede votar. Si alguien se equivoca, el admin edita al jugador (Plantel → Editar) y borra o corrige el mail.
+- **Juegos**: pestaña con minijuegos. Por ahora *Pateale Penales a Gure*: tanda de 5 penales, tocás el arco para patear y el arquero (la foto de Gure, tomada del Plantel) se tira. Guarda tu récord en el celular.
 - Solo los **admins** (vos) cargan y editan; el resto solo mira y vota.
 
 ## Puesta en marcha (≈10 min, gratis)

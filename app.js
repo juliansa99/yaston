@@ -15,7 +15,7 @@ if (!cfg.SUPABASE_URL || !cfg.SUPABASE_ANON_KEY) {
 const db = supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
 
 const S = {
-  user: null, isAdmin: false, meId: null, tab: 'tabla', year: 'all',
+  user: null, isAdmin: false, meId: null, tab: 'tabla', game: null, year: 'all',
   players: [], emails: {}, matches: [], mp: [], mvp: [], totals: {}, myVotes: {}, unclaimed: [],
 };
 
@@ -271,11 +271,32 @@ function render() {
       ${S.user ? `<div class="me">${avatar}<span>${esc(name.split(' ')[0])}</span><button data-act="logout">Salir</button></div>`
         : '<button class="btn sm primary" data-act="login">Entrar con Google</button>'}
     </header>
-    <main class="wrap">${S.tab === 'tabla' ? viewTabla() : S.tab === 'premios' ? viewPremios() : S.tab === 'partidos' ? viewPartidos() : viewPlantel()}</main>
+    <main class="wrap">${S.tab === 'tabla' ? viewTabla() : S.tab === 'premios' ? viewPremios() : S.tab === 'juegos' ? viewJuegos() : S.tab === 'partidos' ? viewPartidos() : viewPlantel()}</main>
     <nav class="tabs"><div class="in">
-      ${[['tabla', '🏆', 'Tabla'], ['premios', '🏅', 'Premios'], ['partidos', '📅', 'Partidos'], ['plantel', '👥', 'Plantel']]
+      ${[['tabla', '🏆', 'Tabla'], ['premios', '🏅', 'Premios'], ['partidos', '📅', 'Partidos'], ['plantel', '👥', 'Plantel'], ['juegos', '🎮', 'Juegos']]
         .map(([k, i, l]) => `<button data-act="tab" data-tab="${k}" class="${S.tab === k ? 'on' : ''}"><b>${i}</b>${l}</button>`).join('')}
     </div></nav>`;
+  mountGame();
+}
+
+function viewJuegos() {
+  if (S.game === 'penales') {
+    return `<div class="section-title"><button class="btn sm ghost" data-act="game" data-g="">← Juegos</button></div><div id="game-root"></div>`;
+  }
+  const gure = S.players.find(p => !p.guest && p.name.trim().toLowerCase() === 'gure');
+  return `<div class="section-title"><h2>Juegos</h2></div>
+    <button class="gamecard" data-act="game" data-g="penales">
+      <span class="gc-art">${gure ? av(gure, 'lg') : '<span class="av lg">G</span>'}<span class="gc-ball">⚽</span></span>
+      <span class="gc-txt"><b>Pateale Penales a Gure</b><span class="muted small">Tanda de 5 penales. Tocá el arco y fijate si Gure la ataja.</span></span>
+      <span class="gc-go">Jugar ›</span>
+    </button>
+    <p class="legend">Pronto, más juegos.</p>`;
+}
+
+function mountGame() {
+  if (S.tab !== 'juegos' || S.game !== 'penales' || !$('#game-root')) return;
+  const gure = S.players.find(p => !p.guest && p.name.trim().toLowerCase() === 'gure');
+  window.YastonPenales?.mount($('#game-root'), { name: gure?.name || 'Gure', photo: gure?.photo_url || null });
 }
 
 function viewTabla() {
@@ -575,6 +596,7 @@ function matchModal(id) {
 const actions = {
   login: () => db.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname } }),
   logout: async () => { await db.auth.signOut(); S.user = null; S.isAdmin = false; S.meId = null; S.myVotes = {}; S.emails = {}; render(); },
+  game: el => { S.game = el.dataset.g || null; render(); scrollTo(0, 0); },
   tab: el => { S.tab = el.dataset.tab; render(); scrollTo(0, 0); },
   year: el => { S.year = el.value; render(); },
   vote: async el => {

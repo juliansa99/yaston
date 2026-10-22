@@ -16,7 +16,7 @@ const db = supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
 
 const S = {
   user: null, isAdmin: false, meId: null, tab: 'tabla', year: 'all',
-  players: [], emails: {}, matches: [], mp: [], mvp: [], totals: {}, myVotes: {},
+  players: [], emails: {}, matches: [], mp: [], mvp: [], totals: {}, myVotes: {}, unclaimed: [],
 };
 
 /* ---------------- utilidades ---------------- */
@@ -60,10 +60,17 @@ async function loadAll() {
   S.totals = Object.fromEntries(totals.map(t => [t.match_id, t.total]));
   S.myVotes = Object.fromEntries(votes.map(v => [v.match_id, v.voted_for]));
   S.emails = emails ? Object.fromEntries(emails.map(e => [e.player_id, e.email])) : {};
+  S.unclaimed = S.user && !meId ? await must(db.rpc('unclaimed_players')) : [];
+}
+
+function maybeClaim() {
+  let skipped = false;
+  try { skipped = sessionStorage.getItem('yaston-skip-claim') === '1'; } catch { /* sin storage */ }
+  if (S.user && !S.meId && S.unclaimed.length && !skipped && !$('#modal-root .overlay')) claimModal();
 }
 
 async function refresh() {
-  try { await loadAll(); render(); } catch (e) { toast(e.message || 'Error al cargar', true); }
+  try { await loadAll(); render(); maybeClaim(); } catch (e) { toast(e.message || 'Error al cargar', true); }
 }
 
 /* ---------------- cálculo de la tabla ---------------- */
@@ -310,7 +317,7 @@ function voteBox(m) {
   const info = `<div class="muted small">${total}/${parts.length} ya votaron</div>`;
   const mine = parts.find(x => x.player_id === S.meId);
   if (!S.user) return `<div class="votebox"><h4>🗳️ Votación abierta</h4><div class="muted small">Para votar tenés que entrar con tu Gmail.</div><div style="margin:10px 0"><button class="btn sm primary" data-act="login">Entrar con Google</button></div>${info}</div>`;
-  if (!S.meId) return `<div class="votebox"><h4>🗳️ Votación abierta</h4><div class="muted small">Tu mail (${esc(S.user.email)}) no está vinculado a ningún jugador. Pedile al admin que lo cargue.</div>${info}</div>`;
+  if (!S.meId) return `<div class="votebox"><h4>🗳️ Votación abierta</h4><div class="muted small">Todavía no elegiste quién sos.</div><div style="margin:10px 0"><button class="btn sm primary" data-act="claim">Elegir quién soy</button></div>${info}</div>`;
   if (!mine) return `<div class="votebox"><h4>🗳️ Votación abierta</h4><div class="muted small">Solo votan los que jugaron este partido.</div>${info}</div>`;
   const myVote = S.myVotes[m.id];
   const opts = parts.filter(x => x.player_id !== S.meId).map(x => player(x.player_id)).filter(Boolean);
@@ -344,6 +351,7 @@ function viewPlantel() {
   const st = Object.fromEntries([...standings().played, ...standings().never].map(r => [r.p.id, r]));
   return `<div class="section-title"><h2>Plantel · ${S.players.length}</h2>
       ${S.isAdmin ? '<button class="btn primary sm" data-act="new-player">+ Jugador</button>' : ''}</div>
+    ${S.user && !S.meId ? '<div class="card"><b>¿Quién sos?</b><div class="muted small" style="margin:4px 0 10px">Elegí tu nombre para poder votar.</div><button class="btn sm primary" data-act="claim">Elegir quién soy</button></div>' : ''}
     ${S.players.length ? `<div class="pgrid">${S.players.map(p => {
       const r = st[p.id];
       return `<div class="pcard ${p.id === S.meId ? 'me-card' : ''}">${av(p, 'xl')}
@@ -368,6 +376,31 @@ async function resizeImage(file) {
   const s = Math.min(bmp.width, bmp.height);
   c.getContext('2d').drawImage(bmp, (bmp.width - s) / 2, (bmp.height - s) / 2, s, s, 0, 0, size, size);
   return new Promise(r => c.toBlob(r, 'image/jpeg', 0.85));
+}
+
+function claimModal() {
+  const opts = S.unclaimed.map(player).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name));
+  let pick = null;
+  openModal(`<h3>¿Quién sos?</h3>
+    <p class="muted small">Elegí tu nombre de la lista. Queda vinculado a <b>${esc(S.user.email)}</b> y con eso podés votar. Si te equivocás, avisale al admin.</p>
+    ${opts.length ? `<div class="vgrid">${opts.map(p => `<button type="button" class="vopt" data-pick="${p.id}">${av(p)}<span>${esc(p.name)}</span></button>`).join('')}</div>`
+      : '<div class="empty">Todos los jugadores de la lista ya fueron elegidos. Si no estás, avisale al admin.</div>'}
+    <div class="err" id="cerr"></div>
+    <div class="actions"><button type="button" class="btn ghost" id="cskip">Ahora no</button>
+      <button type="button" class="btn primary" id="cok" disabled>Elegí tu nombre</button></div>`);
+  $('#cskip').onclick = () => { try { sessionStorage.setItem('yaston-skip-claim', '1'); } catch { /* sin storage */ } closeModal(); };
+  $('#modal-root').onclick = e => {
+    const b = e.target.closest('[data-pick]'); if (!b) return;
+    pick = player(b.dataset.pick);
+    document.querySelectorAll('#modal-root .vopt').forEach(x => x.classList.toggle('sel', x === b));
+    $('#cok').disabled = false; $('#cok').textContent = `Soy ${pick.name}`;
+  };
+  $('#cok').onclick = async () => {
+    if (!pick) return;
+    $('#cok').disabled = true; $('#cerr').textContent = '';
+    try { await must(db.rpc('claim_player', { p_player: pick.id })); closeModal(); toast(`Listo, sos ${pick.name} ✅`); refresh(); }
+    catch (e) { $('#cerr').textContent = e.message; $('#cok').disabled = false; refresh(); }
+  };
 }
 
 function playerModal(id) {
@@ -488,6 +521,7 @@ const actions = {
     try { await must(db.rpc('cast_vote', { p_match: el.dataset.m, p_for: el.dataset.p })); toast('Voto registrado 🗳️'); refresh(); }
     catch (e) { toast(e.message, true); }
   },
+  claim: () => { try { sessionStorage.removeItem('yaston-skip-claim'); } catch { /* sin storage */ } claimModal(); },
   'player-history': el => historyModal(el.dataset.id),
   'new-player': () => playerModal(),
   'edit-player': el => playerModal(el.dataset.id),
@@ -518,6 +552,7 @@ async function start() {
     S.isAdmin = S.user ? !!(await must(db.rpc('is_admin'))) : false;
     await loadAll();
     render();
+    maybeClaim();
   } catch (e) {
     app.innerHTML = `<div class="center-screen"><div class="card setup"><h2>Ups</h2>
       <p class="muted">${esc(e.message)}</p><p class="small muted">¿Corriste el <code>schema.sql</code> en Supabase?</p>

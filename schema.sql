@@ -158,6 +158,30 @@ revoke all on function public.mvp_counts(), public.vote_totals(), public.cast_vo
 grant execute on function public.mvp_counts(), public.vote_totals(), public.cast_vote(uuid, uuid), public.my_player_id(), public.is_admin() to authenticated;
 grant execute on function public.mvp_counts(), public.vote_totals() to anon;  -- ver resultados no requiere login
 
+-- Elegir "quién soy": el usuario logueado se vincula a un jugador que todavía no tenga mail
+create or replace function public.unclaimed_players() returns setof uuid
+language sql stable security definer set search_path = public as $fn$
+  select p.id from public.players p
+  where not exists (select 1 from public.player_emails e where e.player_id = p.id);
+$fn$;
+
+create or replace function public.claim_player(p_player uuid) returns void
+language plpgsql security definer set search_path = public as $fn$
+declare mail text := lower(coalesce(auth.jwt() ->> 'email', ''));
+begin
+  if auth.uid() is null or mail = '' then raise exception 'Tenés que iniciar sesión'; end if;
+  if public.my_player_id() is not null then raise exception 'Tu cuenta ya está vinculada a un jugador'; end if;
+  if not exists (select 1 from public.players where id = p_player) then raise exception 'Ese jugador no existe'; end if;
+  if exists (select 1 from public.player_emails where player_id = p_player) then
+    raise exception 'Ese jugador ya fue elegido por otra persona. Avisale al admin.';
+  end if;
+  insert into public.player_emails (player_id, email) values (p_player, mail);
+end
+$fn$;
+
+revoke all on function public.unclaimed_players(), public.claim_player(uuid) from public, anon;
+grant execute on function public.unclaimed_players(), public.claim_player(uuid) to authenticated;
+
 -- 4) FOTOS (Storage)
 insert into storage.buckets (id, name, public) values ('fotos', 'fotos', true) on conflict (id) do nothing;
 

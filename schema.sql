@@ -21,6 +21,7 @@ create table if not exists public.players (
   id         uuid primary key default gen_random_uuid(),
   name       text not null,
   photo_url  text,
+  guest      boolean not null default false,   -- true = invitado de un solo partido (sin foto, no figura en el Plantel)
   created_at timestamptz not null default now()
 );
 
@@ -162,7 +163,7 @@ grant execute on function public.mvp_counts(), public.vote_totals() to anon;  --
 create or replace function public.unclaimed_players() returns setof uuid
 language sql stable security definer set search_path = public as $fn$
   select p.id from public.players p
-  where not exists (select 1 from public.player_emails e where e.player_id = p.id);
+  where not p.guest and not exists (select 1 from public.player_emails e where e.player_id = p.id);
 $fn$;
 
 create or replace function public.claim_player(p_player uuid) returns void

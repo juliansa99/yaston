@@ -189,3 +189,10 @@ table.tbl { width: 100%; border-collapse: collapse; }
 .vsbox { background: rgba(255,255,255,.05); border-radius: 12px; padding: 12px; margin-top: 10px; }
 .vsbox h4 { margin: 0 0 10px; font-size: .9rem; }
 .vsbox .vsnums { margin: 0; }
+
+.guest-add { margin-top: 14px; padding: 12px; border-radius: 12px; background: rgba(255,255,255,.05); border: 1px dashed var(--line); }
+.guest-add label { display: block; font-size: .85rem; margin-bottom: 8px; color: var(--txt); }
+.guest-row { display: flex; gap: 8px; }
+.guest-row input { flex: 1; min-width: 0; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.guest-add .hint { font-size: .75rem; color: var(--mut); margin-top: 6px; }
+.pick .nm .badge { margin-left: 4px; }

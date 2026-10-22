@@ -181,7 +181,7 @@ function viewPremios() {
   const victorioso = top(rows, r => r.g || null).map(r => one(r, `${r.g} partidos ganados`));
   const promedio = top(rows, r => r.pj >= MIN ? r.g / r.pj + r.pj / 1e6 : null).map(r => one(r, `${pct(r.g, r.pj)} de victorias en ${r.pj} partidos`));
   const derrotado = top(rows, r => r.pj >= MIN && r.pe ? r.pe / r.pj + r.pj / 1e6 : null).map(r => one(r, `${pct(r.pe, r.pj)} de derrotas en ${r.pj} partidos`));
-  const fantasmas = rows.filter(r => r.pj === 0).map(r => one(r, 'Todavía no jugó ningún partido'));
+  const fantasmas = rows.filter(r => r.pj === 0 && !r.p.guest).map(r => one(r, 'Todavía no jugó ningún partido'));
   // jugador del mes: el que más veces ganó la estrella (mes actual, o el último con estrellas)
   const months = [...new Set(ev.map(x => x.date.slice(0, 7)))].sort();
   const nowKey = new Date().toISOString().slice(0, 7);
@@ -218,7 +218,7 @@ function historyModal(id) {
   const p = player(id), H = history(), l = H.get(id) || [];
   const g = l.filter(x => x.out === 'W').length, pe = l.filter(x => x.out === 'L').length, e = l.length - g - pe;
   const st = streaks(l), stars = mvpEvents().filter(x => x.pid === id).length;
-  const others = S.players.filter(q => q.id !== id);
+  const others = S.players.filter(q => q.id !== id && !q.guest);
   let dupla = null, bestia = null;
   for (const q of others) {
     const v = versus(id, q.id), together = v.wj + v.dj + v.lj, against = v.aw + v.bw + v.d;
@@ -276,7 +276,7 @@ function viewTabla() {
   const { played, never } = standings();
   const row = (r, i, dim) => `<tr class="${i === 0 && !dim ? 'top1' : ''} ${dim ? 'dim' : ''}">
       <td class="pos">${dim ? '–' : i + 1}</td>
-      <td class="l"><div class="pl">${av(r.p)}<span class="n">${esc(r.p.name)}</span>${r.st.cw >= 3 ? `<span class="badge hot" title="Racha de victorias">🔥${r.st.cw}</span>` : r.st.cl >= 3 ? `<span class="badge cold" title="Racha de derrotas">🥶${r.st.cl}</span>` : ''}</div></td>
+      <td class="l"><div class="pl">${av(r.p)}<span class="n">${esc(r.p.name)}</span>${r.p.guest ? '<span class="badge">invitado</span>' : ''}${r.st.cw >= 3 ? `<span class="badge hot" title="Racha de victorias">🔥${r.st.cw}</span>` : r.st.cl >= 3 ? `<span class="badge cold" title="Racha de derrotas">🥶${r.st.cl}</span>` : ''}</div></td>
       <td>${r.pj}</td><td>${r.g}</td><td>${r.e}</td><td>${r.pe}</td><td>${r.mvp ? '⭐' + r.mvp : '–'}</td><td class="pts">${r.pts}</td></tr>`;
   const played_n = S.matches.filter(m => m.result && (S.year === 'all' || m.played_on.startsWith(S.year))).length;
   return `
@@ -348,11 +348,12 @@ function viewPartidos() {
 }
 
 function viewPlantel() {
+  const roster = S.players.filter(p => !p.guest);
   const st = Object.fromEntries([...standings().played, ...standings().never].map(r => [r.p.id, r]));
-  return `<div class="section-title"><h2>Plantel · ${S.players.length}</h2>
+  return `<div class="section-title"><h2>Plantel · ${roster.length}</h2>
       ${S.isAdmin ? '<button class="btn primary sm" data-act="new-player">+ Jugador</button>' : ''}</div>
     ${S.user && !S.meId ? '<div class="card"><b>¿Quién sos?</b><div class="muted small" style="margin:4px 0 10px">Elegí tu nombre para poder votar.</div><button class="btn sm primary" data-act="claim">Elegir quién soy</button></div>' : ''}
-    ${S.players.length ? `<div class="pgrid">${S.players.map(p => {
+    ${roster.length ? `<div class="pgrid">${roster.map(p => {
       const r = st[p.id];
       return `<div class="pcard ${p.id === S.meId ? 'me-card' : ''}">${av(p, 'xl')}
         <div class="nm">${esc(p.name)}</div>
@@ -459,17 +460,33 @@ function playerModal(id) {
 function matchModal(id) {
   const m = id ? S.matches.find(x => x.id === id) : null;
   const teamOf = pid => S.mp.find(x => x.match_id === id && x.player_id === pid)?.team || '';
+  // candidatos: jugadores del plantel + invitados que ya estaban en este partido + invitados nuevos (tid)
+  const cand = [
+    ...S.players.filter(p => !p.guest).map(p => ({ key: p.id, p })),
+    ...S.players.filter(p => p.guest && teamOf(p.id)).map(p => ({ key: p.id, p })),
+  ];
+  const pickRow = (c, team) => {
+    const p = c.p || { name: c.name, guest: true };
+    return `<div class="pick" data-key="${c.key}">${av(c.p || { name: c.name }, 'sm')}<span class="nm">${esc(p.name)}${p.guest ? ' <span class="badge">invitado</span>' : ''}</span>
+      <div class="seg">
+        <label data-t="A"><input type="radio" name="t-${c.key}" value="A" ${team === 'A' ? 'checked' : ''}><span>A</span></label>
+        <label data-t="-"><input type="radio" name="t-${c.key}" value="" ${!team ? 'checked' : ''}><span>–</span></label>
+        <label data-t="B"><input type="radio" name="t-${c.key}" value="B" ${team === 'B' ? 'checked' : ''}><span>B</span></label>
+      </div></div>`;
+  };
   openModal(`<h3>${m ? 'Editar partido' : 'Nuevo partido'}</h3>
     <form id="mf">
       <div class="field"><label>Fecha</label><input type="date" id="mdate" required value="${m?.played_on || lastThursday()}"></div>
       <div class="field"><label>Armá los equipos (máx. 5 por equipo)</label>
         <div class="counts" id="mcounts"></div>
-        ${S.players.map(p => `<div class="pick" data-pid="${p.id}">${av(p, 'sm')}<span class="nm">${esc(p.name)}</span>
-          <div class="seg">
-            <label data-t="A"><input type="radio" name="t-${p.id}" value="A" ${teamOf(p.id) === 'A' ? 'checked' : ''}><span>A</span></label>
-            <label data-t="-"><input type="radio" name="t-${p.id}" value="" ${!teamOf(p.id) ? 'checked' : ''}><span>–</span></label>
-            <label data-t="B"><input type="radio" name="t-${p.id}" value="B" ${teamOf(p.id) === 'B' ? 'checked' : ''}><span>B</span></label>
-          </div></div>`).join('') || '<div class="muted">Primero cargá jugadores en la pestaña Plantel.</div>'}
+        <div id="plist">${cand.map(c => pickRow(c, teamOf(c.key))).join('')}</div>
+        <div id="pempty" class="muted ${cand.length ? 'hidden' : ''}">Todavía no hay jugadores. Cargalos en Plantel o sumá un invitado acá abajo.</div>
+        <div class="guest-add">
+          <label for="gname">➕ Sumar un invitado solo para este partido</label>
+          <div class="guest-row"><input type="text" id="gname" maxlength="40" placeholder="Nombre del invitado">
+            <button type="button" class="btn sm" id="gadd">Agregar</button></div>
+          <div class="hint">Aparece en la tabla solo con el nombre, sin foto, y no figura en el Plantel.</div>
+        </div>
       </div>
       <div class="field"><label>¿Quién ganó?</label><div class="seg">
         ${[['', 'Todavía no'], ['A', 'Equipo A'], ['B', 'Equipo B'], ['D', 'Empate']].map(([v, l]) =>
@@ -479,15 +496,30 @@ function matchModal(id) {
       <div class="actions"><button type="button" class="btn ghost" id="mcancel">Cancelar</button>
         <button class="btn primary" id="msave">Guardar</button></div>
     </form>`);
-  const team = pid => $(`input[name="t-${pid}"]:checked`)?.value || '';
+  const team = key => $(`input[name="t-${key}"]:checked`)?.value || '';
   const count = () => {
-    const a = S.players.filter(p => team(p.id) === 'A').length, b = S.players.filter(p => team(p.id) === 'B').length;
+    const a = cand.filter(c => team(c.key) === 'A').length, b = cand.filter(c => team(c.key) === 'B').length;
     $('#mcounts').innerHTML = `<span class="${a > 5 ? 'bad' : a === 5 ? 'ok' : ''}">Equipo A: ${a}</span><span class="${b > 5 ? 'bad' : b === 5 ? 'ok' : ''}">Equipo B: ${b}</span>`;
     return [a, b];
   };
   count();
   $('#mf').addEventListener('change', count);
   $('#mcancel').onclick = closeModal;
+  let n = 0;
+  const addGuest = () => {
+    const input = $('#gname'), name = input.value.trim();
+    if (!name) return input.focus();
+    const c = { key: 'new' + (++n), name, temp: true };
+    cand.push(c);
+    $('#plist').insertAdjacentHTML('beforeend', pickRow(c, ''));
+    $('#pempty').classList.add('hidden');
+    input.value = '';
+    count();
+  };
+  $('#gadd').onclick = addGuest;
+  $('#gname').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); addGuest(); } };
+  let mid = id;
+  const made = new Map(); // invitados nuevos ya creados (por si hay que reintentar)
   $('#mf').onsubmit = async e => {
     e.preventDefault();
     const [a, b] = count(); const err = $('#merr'); err.textContent = '';
@@ -496,16 +528,24 @@ function matchModal(id) {
     const btn = $('#msave'); btn.disabled = true;
     try {
       const row = { played_on: $('#mdate').value, result: $('input[name=res]:checked').value || null };
-      let mid = id;
       if (mid) await must(db.from('matches').update(row).eq('id', mid));
       else mid = (await must(db.from('matches').insert(row).select().single())).id;
-      const want = S.players.map(p => ({ match_id: mid, player_id: p.id, team: team(p.id) })).filter(x => x.team);
+      // crear los invitados nuevos que quedaron en algún equipo
+      const fresh = cand.filter(c => c.temp && team(c.key) && !made.has(c.key));
+      if (fresh.length) {
+        const rows = await must(db.from('players').insert(fresh.map(c => ({ name: c.name, guest: true }))).select());
+        fresh.forEach((c, i) => made.set(c.key, rows[i].id));
+      }
+      const pid = c => c.temp ? made.get(c.key) : c.key;
+      const want = cand.filter(c => team(c.key)).map(c => ({ match_id: mid, player_id: pid(c), team: team(c.key) }));
       const have = S.mp.filter(x => x.match_id === mid);
       const removed = have.filter(h => !want.some(w => w.player_id === h.player_id));
       const changed = have.filter(h => want.some(w => w.player_id === h.player_id && w.team !== h.team));
       for (const r of [...removed, ...changed]) await must(db.from('match_players').delete().match({ match_id: mid, player_id: r.player_id }));
       const toAdd = want.filter(w => { const h = have.find(x => x.player_id === w.player_id); return !h || h.team !== w.team; });
       if (toAdd.length) await must(db.from('match_players').insert(toAdd));
+      // un invitado que sacaste del partido no vuelve a hacer falta
+      for (const r of removed) if (player(r.player_id)?.guest) await must(db.from('players').delete().eq('id', r.player_id));
       closeModal(); toast('Partido guardado ✅'); refresh();
     } catch (er) { btn.disabled = false; err.textContent = er.message; }
   };

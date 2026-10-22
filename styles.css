@@ -6,6 +6,8 @@
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+body { overflow-x: hidden; }
 body {
   background: radial-gradient(1200px 600px at 50% -200px, var(--bg2), var(--bg));
   background-attachment: fixed; color: var(--txt); min-height: 100vh;
@@ -196,3 +198,35 @@ table.tbl { width: 100%; border-collapse: collapse; }
 .guest-row input { flex: 1; min-width: 0; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
 .guest-add .hint { font-size: .75rem; color: var(--mut); margin-top: 6px; }
 .pick .nm .badge { margin-left: 4px; }
+
+/* ---------- tabla ajustada al celular ---------- */
+.tbl { table-layout: fixed; }
+.tbl th:nth-child(1) { width: 30px; }
+.tbl th:nth-child(3) { width: 34px; }
+.tbl th:nth-child(4), .tbl th:nth-child(5), .tbl th:nth-child(6) { width: 30px; }
+.tbl th:nth-child(7) { width: 44px; }
+.tbl th:nth-child(8) { width: 44px; }
+.tbl .pl { min-width: 0; }
+.who { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
+.who .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tags { display: flex; gap: 4px; flex-wrap: wrap; }
+.tags:empty { display: none; }
+.tbl .av { width: 34px; height: 34px; font-size: .75rem; }
+.tbl .badge { font-size: .62rem; padding: 1px 6px; }
+.tbl td.pts { font-size: 1rem; }
+.tbl.stars { table-layout: auto; }
+@media (max-width: 420px) {
+  .tbl td { padding: 7px 1px; font-size: .9rem; }
+  .tbl th { font-size: .62rem; padding: 8px 1px; }
+  .tbl .pl { gap: 6px; }
+  .tbl .av { width: 30px; height: 30px; font-size: .7rem; }
+  .tbl th:nth-child(1) { width: 24px; }
+  .tbl th:nth-child(3) { width: 30px; }
+  .tbl th:nth-child(4), .tbl th:nth-child(5), .tbl th:nth-child(6) { width: 26px; }
+  .tbl th:nth-child(7) { width: 40px; }
+  .tbl th:nth-child(8) { width: 38px; }
+  .tbl td.pos { padding-left: 4px; }
+  .tbl th.l, .tbl td.l { padding-left: 6px; }
+  .wrap { padding-left: 12px; padding-right: 12px; }
+  header.top { padding-left: 12px; padding-right: 12px; }
+}

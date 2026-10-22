@@ -216,7 +216,7 @@ function viewPremios() {
       ${award('💀', 'Dupla maldita', `Peor % de victorias juntos (mínimo ${MIN} partidos)`, maldita)}
     </div>
     <div class="section-title"><h2>Ranking de estrellas ⭐</h2></div>
-    ${stars.length ? `<div class="table-wrap"><table class="tbl"><tbody>${stars.map((r, i) => `<tr class="${i === 0 ? 'top1' : ''}"><td class="pos">${i + 1}</td>
+    ${stars.length ? `<div class="table-wrap"><table class="tbl stars"><tbody>${stars.map((r, i) => `<tr class="${i === 0 ? 'top1' : ''}"><td class="pos">${i + 1}</td>
       <td class="l"><div class="pl">${av(r.p)}<span class="n">${esc(r.p.name)}</span></div></td><td class="pts">⭐ ${r.mvp}</td></tr>`).join('')}</tbody></table></div>`
       : '<div class="empty">Todavía no se cerró ninguna votación.</div>'}`;
 }
@@ -283,7 +283,7 @@ function viewTabla() {
   const { played, never } = standings();
   const row = (r, i, dim) => `<tr class="${i === 0 && !dim ? 'top1' : ''} ${dim ? 'dim' : ''}">
       <td class="pos">${dim ? '–' : i + 1}</td>
-      <td class="l"><div class="pl">${av(r.p)}<span class="n">${esc(r.p.name)}</span>${r.p.guest ? '<span class="badge">invitado</span>' : ''}${r.st.cw >= 3 ? `<span class="badge hot" title="Racha de victorias">🔥${r.st.cw}</span>` : r.st.cl >= 3 ? `<span class="badge cold" title="Racha de derrotas">🥶${r.st.cl}</span>` : ''}</div></td>
+      <td class="l"><div class="pl">${av(r.p)}<span class="who"><span class="n">${esc(r.p.name)}</span><span class="tags">${r.p.guest ? '<span class="badge">invitado</span>' : ''}${r.st.cw >= 3 ? `<span class="badge hot" title="Racha de victorias">🔥${r.st.cw}</span>` : r.st.cl >= 3 ? `<span class="badge cold" title="Racha de derrotas">🥶${r.st.cl}</span>` : ''}</span></span></div></td>
       <td>${r.pj}</td><td>${r.g}</td><td>${r.e}</td><td>${r.pe}</td><td>${r.mvp ? '⭐' + r.mvp : '–'}</td><td class="pts">${r.pts}</td></tr>`;
   const played_n = S.matches.filter(m => m.result && (S.year === 'all' || m.played_on.startsWith(S.year))).length;
   return `

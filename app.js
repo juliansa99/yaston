@@ -322,6 +322,7 @@ function viewPerfil() {
       <div class="kv"><span>🤝 Mejor dupla</span><b>${dupla ? `${esc(dupla.q.name)} (${dupla.w}/${dupla.n})` : `todavía sin datos (mín. ${MIN})`}</b></div>
       <div class="kv"><span>😈 Bestia negra</span><b>${bestia ? `${esc(bestia.q.name)} (le ganó ${bestia.w}/${bestia.n})` : `todavía sin datos (mín. ${MIN})`}</b></div>
     </div>
+    <button class="btn primary wide" data-act="wrapped" data-id="${id}">🎁 Ver el resumen de ${nowAR().iso.slice(0, 4)}</button>
     <div class="section-title"><h2>Último${l.length === 1 ? '' : 's'} partido${l.length === 1 ? '' : 's'}</h2></div>
     ${line ? `<div class="card timeline">${line}</div>` : '<div class="empty">Todavía no jugó ningún partido.</div>'}
     <div class="section-title"><h2>Comparar con otro</h2></div>
@@ -506,18 +507,35 @@ function viewTabla() {
     const c = champion(x), fin = x.to < todayISO();
     return `<tr><td>${x.to.slice(0, 4)}</td><td class="l">${esc(x.full)}</td><td>${fin && c ? '🏆 ' + esc(c) : '<span class="muted">En juego</span>'}</td><td>${fmtShort(x.to)}</td></tr>`;
   }).join('');
-  return head + body + `
+  const navidad = S.meId && nowAR().iso.slice(5, 7) === '12'
+    ? `<div class="card notice"><b>🎁 ¡Ya está tu resumen del año!</b><div class="muted small" style="margin:4px 0 10px">Tus partidos, tu racha, tu dupla y tu apodo de ${nowAR().iso.slice(0, 4)}.</div><button class="btn primary sm" data-act="wrapped" data-id="${S.meId}">Verlo</button></div>` : '';
+  return navidad + head + body + `
     <div class="section-title"><h2>Títulos</h2></div>
     <div class="table-wrap"><table class="tbl titles"><thead><tr><th>Año</th><th class="l">Torneo</th><th>Campeón</th><th>Finaliza</th></tr></thead><tbody>${palmares}</tbody></table></div>`;
 }
 
-function teamHtml(m, t) {
-  const members = S.mp.filter(x => x.match_id === m.id && x.team === t).map(x => player(x.player_id)).filter(Boolean);
-  const won = m.result === t;
-  return `<div class="team ${t} ${won ? 'won' : ''}">
-    <h4><span>Equipo ${t} ${won ? '🏆' : ''}</span></h4>
-    ${members.map(p => `<div class="row">${av(p, 'sm')}<span>${esc(p.name)}</span></div>`).join('') || '<span class="muted small">Sin jugadores</span>'}
-  </div>`;
+const FORMATIONS = { 1: [1], 2: [1, 1], 3: [1, 2], 4: [1, 1, 2], 5: [1, 2, 2], 6: [1, 2, 3], 7: [2, 2, 3] };
+function pitchHtml(m) {
+  const mvpIds = !m.voting_open ? mvpWinners(m.id).winners.map(w => w.player_id) : [];
+  const toks = ['A', 'B'].map(t => {
+    const ps = S.mp.filter(x => x.match_id === m.id && x.team === t).map(x => player(x.player_id)).filter(Boolean)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    const rows = FORMATIONS[Math.min(ps.length, 7)] || [3, 3, 3];
+    const out = []; let k = 0;
+    rows.forEach((cnt, r) => {
+      const y = 8 + r * 15;
+      for (let c = 0; c < cnt && k < ps.length; c++, k++) {
+        const p = ps[k], x = (c + 1) / (cnt + 1) * 100;
+        out.push(`<button class="p-tok ${t}" style="left:${x.toFixed(1)}%;top:${t === 'A' ? y : 100 - y}%" data-act="perfil" data-id="${p.id}" title="${esc(p.name)}">
+          <span class="p-av">${av(p)}${mvpIds.includes(p.id) ? '<span class="p-star">⭐</span>' : ''}</span><span class="p-name">${esc(p.name)}</span></button>`);
+      }
+    });
+    return out.join('');
+  }).join('');
+  return `<div class="pitch" role="group" aria-label="Equipos en la cancha">
+    <i class="p-line"></i><i class="p-circle"></i><i class="p-box top"></i><i class="p-box bot"></i><i class="p-goal top"></i><i class="p-goal bot"></i>
+    <span class="p-tag a">EQUIPO A${m.result === 'A' ? ' 🏆' : ''}</span><span class="p-tag b">EQUIPO B${m.result === 'B' ? ' 🏆' : ''}</span>
+    ${toks}</div>`;
 }
 
 function mvpBox(m) {
@@ -819,12 +837,89 @@ function oddsHtml(t) {
     <p class="legend" style="margin:10px 0 0">Se simularon ${o.RUNS?.toLocaleString('es-AR') || ''} finales de torneo: cada semana juegan 10 con la frecuencia con la que viene cada uno, los equipos se arman al azar y gana el más fuerte según las estadísticas, con un poco de suerte. Es una estimación para divertirse, no un resultado seguro. Solo se muestran los que tienen al menos 1%.</p></div>`;
 }
 
+/* ---------------- resumen del año ---------------- */
+function wrappedData(id) {
+  const year = nowAR().iso.slice(0, 4), p = player(id);
+  const H = history(), l = (H.get(id) || []).filter(x => x.m.played_on.startsWith(year));
+  const g = l.filter(x => x.out === 'W').length, pe = l.filter(x => x.out === 'L').length, e = l.length - g - pe;
+  const loaded = S.matches.filter(m => m.result && m.played_on.startsWith(year)).length;
+  const ap = year === '2026' ? APERTURA_2026.map((r, i) => ({ ...r, pos: i + 1 })).find(r => playerByName(r.n)?.id === id) : null;
+  const apTotal = year === '2026' ? 16 : 0;
+  const played = l.length + (ap?.asist || 0), total = loaded + apTotal;
+  // mejor racha de victorias (con fechas) y peor de derrotas
+  let best = { n: 0 }, cur = null, worst = 0, run = 0;
+  for (const x of l) {
+    if (x.out === 'W') { cur = cur ? { ...cur, n: cur.n + 1, to: x.m.played_on } : { n: 1, from: x.m.played_on, to: x.m.played_on }; if (cur.n > best.n) best = cur; } else cur = null;
+    run = x.out === 'L' ? run + 1 : 0; worst = Math.max(worst, run);
+  }
+  const byMonth = {};
+  for (const x of l) { const k = x.m.played_on.slice(5, 7); byMonth[k] = (byMonth[k] || 0) + 1; }
+  const topMonth = Object.entries(byMonth).sort((a, b) => b[1] - a[1])[0];
+  const monthName = k => new Date(`${year}-${k}-15T12:00:00`).toLocaleDateString('es-AR', { month: 'long' });
+  const stars = mvpEvents().filter(x => x.pid === id && x.date.startsWith(year)).length;
+  const { dupla, bestia } = duoNemesis(id);
+  const tv = TORNEOS.find(x => x.kind === 'vivo'), sv = standings(tv);
+  const posV = sv.played.findIndex(r => r.p.id === id), rowV = sv.played[posV];
+  const att = total ? played / total : 0, pw = l.length ? g / l.length : 0;
+  let nick, why;
+  if (stars >= 3) { nick = 'La Figura'; why = `fuiste el mejor del partido ${stars} veces`; }
+  else if (l.length >= 4 && pw >= 0.65) { nick = 'El Ganador'; why = `ganaste ${Math.round(pw * 100)}% de tus partidos`; }
+  else if (best.n >= 4) { nick = 'El Imparable'; why = `una racha de ${best.n} victorias seguidas`; }
+  else if (att >= 0.8) { nick = 'El Infaltable'; why = `jugaste ${Math.round(att * 100)}% de los jueves`; }
+  else if (l.length >= 4 && pw <= 0.25) { nick = 'El Valiente'; why = 'perdiste mucho y seguiste viniendo'; }
+  else if (att > 0 && att <= 0.3) { nick = 'El Misterioso'; why = 'apareciste solo de vez en cuando'; }
+  else { nick = 'El Regular'; why = 'sumaste partido tras partido'; }
+  return { year, p, l, g, e, pe, played, total, att, pw, best, worst, topMonth: topMonth && { name: monthName(topMonth[0]), n: topMonth[1] }, stars, dupla, bestia, ap, rowV, posV, tv, nick, why };
+}
+function wrappedSlides(d) {
+  const n = esc(d.p.name), dt = x => new Date(x + 'T12:00:00').toLocaleDateString('es-AR', { day: 'numeric', month: 'numeric' });
+  const S2 = [];
+  S2.push({ bg: 'a', big: av(d.p, 'xl'), title: `Tu ${d.year} en Yaston`, text: `${n}, repasemos cómo te fue este año.` });
+  S2.push({ bg: 'b', big: `${d.played}`, title: d.played === 1 ? 'partido jugado' : 'partidos jugados', text: d.total ? `Fuiste a ${Math.round(d.att * 100)}% de los jueves del año (${d.played} de ${d.total}).${d.topMonth ? ` Tu mes con más partidos cargados: ${d.topMonth.name} (${d.topMonth.n}).` : ''}` : 'Todavía no hay partidos este año.' });
+  if (d.l.length) S2.push({ bg: 'c', big: `${Math.round(d.pw * 100)}%`, title: 'de victorias', text: `En los partidos cargados en la página: ${d.g} ganado${d.g === 1 ? '' : 's'}, ${d.e} empate${d.e === 1 ? '' : 's'} y ${d.pe} perdido${d.pe === 1 ? '' : 's'}.` });
+  if (d.best.n) S2.push({ bg: 'd', big: `${d.best.n} 🔥`, title: d.best.n === 1 ? 'victoria seguida' : 'victorias seguidas', text: `Tu mejor racha${d.best.from ? ` (del ${dt(d.best.from)} al ${dt(d.best.to)})` : ''}.${d.worst >= 2 ? ` Tu peor: ${d.worst} derrotas seguidas 🥶.` : ''}` });
+  S2.push({ bg: 'e', big: '🤝', title: 'Tu dupla y tu bestia negra', text: `${d.dupla ? `Con ${esc(d.dupla.q.name)} ganaron ${d.dupla.w} de ${d.dupla.n} juntos. ` : 'Todavía no tenés una dupla con 3 partidos juntos. '}${d.bestia ? `Y ${esc(d.bestia.q.name)} te ganó ${d.bestia.w} de ${d.bestia.n} enfrentamientos.` : ''}` });
+  S2.push({ bg: 'f', big: `${d.stars} ⭐`, title: d.stars === 1 ? 'vez jugador del partido' : 'veces jugador del partido', text: d.stars ? 'Te eligieron como el mejor de la cancha.' : 'Todavía no fuiste la figura. Todavía.' });
+  if (d.ap || d.rowV) S2.push({ bg: 'g', big: '🏆', title: 'Tus torneos', text: `${d.ap ? `Apertura 2026: ${d.ap.pos}º con ${num(d.ap.pts)} pts (asististe a ${d.ap.asist} partidos). ` : ''}${d.rowV ? `${d.tv.name}: vas ${d.posV + 1}º con ${d.rowV.pts} pts.` : ''}` });
+  S2.push({ bg: 'h', big: `«${esc(d.nick)}»`, title: 'Tu apodo del año', text: `Porque ${esc(d.why)}.` });
+  S2.push({ bg: 'a', big: '👏', title: 'Gracias por jugar', text: `Nos vemos el jueves, ${n}.`, last: true });
+  return S2;
+}
+function wrappedText(d) {
+  return [`🎁 Mi ${d.year} en Yaston`, `⚽ ${d.played} partidos${d.total ? ` (${Math.round(d.att * 100)}% de los jueves)` : ''}`,
+    d.l.length ? `📈 ${Math.round(d.pw * 100)}% de victorias (${d.g}G ${d.e}E ${d.pe}P)` : '', d.best.n ? `🔥 Mejor racha: ${d.best.n} victorias seguidas` : '',
+    `⭐ ${d.stars} veces jugador del partido`, `🏷️ Mi apodo: ${d.nick}`].filter(Boolean).join('\n');
+}
+function wrappedStory(id) {
+  const d = wrappedData(id); if (!d.p) return;
+  const slides = wrappedSlides(d); let i = 0;
+  const root = $('#modal-root');
+  const draw = () => {
+    const sl = slides[i];
+    root.innerHTML = `<div class="story bg-${sl.bg}" id="story">
+      <div class="story-bars">${slides.map((_, k) => `<i class="${k < i ? 'done' : k === i ? 'now' : ''}"></i>`).join('')}</div>
+      <button class="story-x" id="story-x" aria-label="Cerrar">✕</button>
+      <div class="story-body"><div class="story-big">${sl.big}</div><h2>${sl.title}</h2><p>${sl.text}</p>
+        ${sl.last ? '<div class="story-actions"><button class="btn primary" id="story-copy">Copiar mi resumen</button><button class="btn ghost" id="story-close">Cerrar</button></div>' : ''}</div>
+      <button class="story-nav prev" id="story-prev" aria-label="Anterior"></button><button class="story-nav next" id="story-next" aria-label="Siguiente"></button></div>`;
+    $('#story-x').onclick = () => { root.innerHTML = ''; document.onkeydown = null; };
+    $('#story-prev').onclick = () => { if (i > 0) { i--; draw(); } };
+    $('#story-next').onclick = () => { if (i < slides.length - 1) { i++; draw(); } };
+    if (sl.last) {
+      $('#story-close').onclick = $('#story-x').onclick;
+      $('#story-copy').onclick = async () => { try { await navigator.clipboard.writeText(wrappedText(d)); toast('Resumen copiado 📋'); } catch { toast('No pude copiar. Sacale una captura 📸', true); } };
+    }
+  };
+  document.onkeydown = e => { if (e.key === 'ArrowRight') $('#story-next')?.click(); else if (e.key === 'ArrowLeft') $('#story-prev')?.click(); else if (e.key === 'Escape') $('#story-x')?.click(); };
+  draw();
+}
+
 function matchCard(m) {
   const res = m.result === 'A' ? 'Ganó el Equipo A' : m.result === 'B' ? 'Ganó el Equipo B' : m.result === 'D' ? 'Empate' : 'Sin resultado';
   const hasParts = S.mp.some(x => x.match_id === m.id);
   return `<div class="card match">
     <div class="head"><div class="date">${fmtDate(m.played_on)}</div><span class="res ${m.result || ''}">${res}</span></div>
-    <div class="teams">${teamHtml(m, 'A')}${teamHtml(m, 'B')}</div>
+    ${pitchHtml(m)}
     ${hasParts && !m.result ? simBox(m) : ''}
     ${hasParts && m.result ? chronicleBox(m) : ''}
     ${hasParts ? (m.voting_open ? voteBox(m) : mvpBox(m)) : ''}
@@ -1081,6 +1176,7 @@ const actions = {
   claim: () => { try { sessionStorage.removeItem('yaston-skip-claim'); } catch { /* sin storage */ } claimModal(); },
   'player-history': el => actions.perfil(el),
   perfil: el => { if (S.tab !== 'perfil') S.prevTab = S.tab; S.tab = 'perfil'; S.perfilId = el.dataset.id || S.meId; S.game = null; S.playId = null; render(); scrollTo(0, 0); },
+  wrapped: el => wrappedStory(el.dataset.id || S.meId),
   'race-mode': el => { S.raceMode = el.dataset.m; render(); },
   'race-toggle': el => { const id = el.dataset.id; if (!S.raceSel) return; if (S.raceSel.has(id)) S.raceSel.delete(id); else S.raceSel.add(id); render(); },
   'new-player': () => playerModal(),

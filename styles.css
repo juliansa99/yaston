@@ -377,3 +377,49 @@ nav.tabs button { font-size: .7rem; }
 .tl-chip { width: 24px; height: 24px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; font-size: .75rem; color: #101010; }
 .tl-chip.w { background: var(--win); } .tl-chip.d { background: var(--draw); } .tl-chip.l { background: var(--loss); }
 .me { cursor: pointer; }
+
+/* ---------- cancha ---------- */
+.pitch { position: relative; width: 100%; max-width: 460px; margin: 0 auto; aspect-ratio: 3 / 4.2; border-radius: 14px; overflow: hidden;
+  background: repeating-linear-gradient(0deg, #14683f 0 12.5%, #187a49 12.5% 25%); border: 2px solid rgba(255,255,255,.35); }
+.pitch i { position: absolute; pointer-events: none; border: 2px solid rgba(255,255,255,.55); }
+.p-line { left: 0; right: 0; top: 50%; border-width: 2px 0 0; }
+.p-circle { left: 50%; top: 50%; width: 28%; aspect-ratio: 1; border-radius: 50%; transform: translate(-50%, -50%); }
+.p-box { left: 22%; right: 22%; height: 17%; }
+.p-box.top { top: -2px; border-top: 0; }
+.p-box.bot { bottom: -2px; border-bottom: 0; }
+.p-goal { left: 40%; right: 40%; height: 3.5%; background: rgba(255,255,255,.18); }
+.p-goal.top { top: -2px; border-top: 0; }
+.p-goal.bot { bottom: -2px; border-bottom: 0; }
+.p-tag { position: absolute; left: 8px; font-size: .62rem; font-weight: 800; letter-spacing: .06em; padding: 2px 8px; border-radius: 999px; color: #101010; z-index: 2; }
+.p-tag.a { top: calc(50% - 22px); background: var(--a); }
+.p-tag.b { top: calc(50% + 6px); background: var(--b); }
+.p-tok { position: absolute; transform: translate(-50%, -50%); background: transparent; border: 0; padding: 0; display: flex; flex-direction: column; align-items: center; gap: 3px; width: 76px; z-index: 1; }
+.p-av { position: relative; display: inline-flex; }
+.p-tok .av { width: 42px; height: 42px; border-width: 3px; box-shadow: 0 3px 8px rgba(0,0,0,.45); }
+.p-tok.A .av { border-color: var(--a); }
+.p-tok.B .av { border-color: var(--b); }
+.p-star { position: absolute; right: -8px; top: -8px; font-size: 1rem; }
+.p-name { max-width: 100%; font-size: .7rem; font-weight: 700; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.9); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* ---------- resumen del año ---------- */
+.btn.wide { width: 100%; margin: 14px 0 0; padding: 12px; }
+.story { position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column; justify-content: center; color: #fff; padding: calc(24px + env(safe-area-inset-top)) 24px calc(24px + env(safe-area-inset-bottom)); }
+.story.bg-a { background: linear-gradient(160deg, #0b3d2e, #14683f); }
+.story.bg-b { background: linear-gradient(160deg, #1d2b64, #2d6cdf); }
+.story.bg-c { background: linear-gradient(160deg, #0f5132, #3ddc84 140%); }
+.story.bg-d { background: linear-gradient(160deg, #7a2e0e, #ff8a3d); }
+.story.bg-e { background: linear-gradient(160deg, #4a1d6b, #a35bff); }
+.story.bg-f { background: linear-gradient(160deg, #6b5200, #ffd23f 150%); }
+.story.bg-g { background: linear-gradient(160deg, #0f3d5c, #2ee6d6 160%); }
+.story.bg-h { background: linear-gradient(160deg, #6b1033, #ff6b9a 150%); }
+.story-bars { position: absolute; top: calc(12px + env(safe-area-inset-top)); left: 16px; right: 56px; display: flex; gap: 4px; z-index: 3; }
+.story-bars i { flex: 1; height: 3px; border-radius: 2px; background: rgba(255,255,255,.3); }
+.story-bars i.done, .story-bars i.now { background: #fff; }
+.story-x { position: absolute; top: calc(6px + env(safe-area-inset-top)); right: 10px; z-index: 4; background: rgba(0,0,0,.25); border: 0; color: #fff; width: 36px; height: 36px; border-radius: 50%; font-size: 1rem; }
+.story-body { position: relative; z-index: 2; text-align: center; max-width: 440px; margin: 0 auto; display: flex; flex-direction: column; align-items: center; gap: 10px; pointer-events: none; }
+.story-big { font-size: clamp(3.5rem, 22vw, 7rem); font-weight: 900; line-height: 1; }
+.story-body h2 { font-size: 1.5rem; }
+.story-body p { font-size: 1.05rem; opacity: .92; margin: 0; }
+.story-actions { display: flex; gap: 10px; margin-top: 14px; pointer-events: auto; }
+.story-nav { position: absolute; top: 60px; bottom: 0; background: transparent; border: 0; z-index: 1; }
+.story-nav.prev { left: 0; width: 30%; }
+.story-nav.next { right: 0; width: 70%; }

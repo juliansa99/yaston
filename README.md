@@ -4,7 +4,7 @@ Web (sin instalar nada, HTML + JS) con:
 
 - **Ver sin registrarse**: cualquiera con el link ve la tabla, los premios, los partidos y el plantel. Solo hace falta **entrar con Gmail (Google)** para **votar** o para **editar** (admin).
 - **Plantel**: cargás jugadores con foto y nombre. Los que casi nunca vienen igual forman parte: aparecen en el plantel y al final de la tabla en gris, hasta que jueguen.
-- **Invitados**: al armar un partido, "Sumar un invitado solo para este partido" agrega a alguien con solo el nombre. Aparece en la tabla (con la etiqueta *invitado*) pero no en el Plantel.
+- **Invitados**: al armar un partido, "Sumar un invitado solo para este partido" agrega a alguien con solo el nombre. Aparece en la tabla (con la etiqueta *invitado*) pero no en el Plantel. Si el mismo invitado vuelve otro jueves y lo escribís igual (da igual mayúsculas o tildes), se cuenta como el mismo jugador y acumula sus partidos.
 - **Partidos**: cada jueves armás los equipos A y B (hasta 5 por equipo), cargás quién ganó (y los goles si querés) y la **tabla se actualiza sola** (ganar 3 pts, empate 1, perder 0). Filtro por año o histórica.
 - **Jugador del partido**: los 10 que jugaron votan (voto secreto, no podés votarte, se puede cambiar hasta que cierres la votación). Al cerrar la votación se muestra el ganador y suma ⭐ en la tabla.
 - **Premios** (se calculan solos): Más victorioso, Mejor promedio y Derrotado (el promedio cuenta desde 3 partidos), Fantasma (el que no viene nunca), Jugador del mes (más ⭐), mejor y peor racha histórica, Dupla letal y Dupla maldita, y un ranking de estrellas. En la tabla se marca 🔥 / 🥶 a quien lleva 3 o más victorias o derrotas seguidas.

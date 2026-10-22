@@ -485,7 +485,7 @@ function matchModal(id) {
           <label for="gname">➕ Sumar un invitado solo para este partido</label>
           <div class="guest-row"><input type="text" id="gname" maxlength="40" placeholder="Nombre del invitado">
             <button type="button" class="btn sm" id="gadd">Agregar</button></div>
-          <div class="hint">Aparece en la tabla solo con el nombre, sin foto, y no figura en el Plantel.</div>
+          <div class="hint">Aparece en la tabla solo con el nombre, sin foto, y no figura en el Plantel. Si ya vino de invitado antes con el mismo nombre, se cuenta como el mismo jugador.</div>
         </div>
       </div>
       <div class="field"><label>¿Quién ganó?</label><div class="seg">
@@ -506,13 +506,22 @@ function matchModal(id) {
   $('#mf').addEventListener('change', count);
   $('#mcancel').onclick = closeModal;
   let n = 0;
+  const norm = t => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
   const addGuest = () => {
-    const input = $('#gname'), name = input.value.trim();
+    const input = $('#gname'), name = input.value.trim(), err = $('#merr');
+    err.textContent = '';
     if (!name) return input.focus();
-    const c = { key: 'new' + (++n), name, temp: true };
+    const same = norm(name);
+    const reg = S.players.find(p => !p.guest && norm(p.name) === same);
+    if (reg) return err.textContent = `${reg.name} ya está en el plantel: buscalo en la lista de arriba.`;
+    if (cand.some(c => norm(c.p?.name || c.name) === same)) return err.textContent = `${name} ya está en la lista del partido.`;
+    // si ya vino de invitado antes, se usa el mismo jugador (así suma sus partidos en la tabla)
+    const before = S.players.find(p => p.guest && norm(p.name) === same);
+    const c = before ? { key: before.id, p: before } : { key: 'new' + (++n), name, temp: true };
     cand.push(c);
     $('#plist').insertAdjacentHTML('beforeend', pickRow(c, ''));
     $('#pempty').classList.add('hidden');
+    if (before) toast(`${before.name} ya había venido de invitado: se cuenta como el mismo jugador`);
     input.value = '';
     count();
   };
@@ -545,7 +554,10 @@ function matchModal(id) {
       const toAdd = want.filter(w => { const h = have.find(x => x.player_id === w.player_id); return !h || h.team !== w.team; });
       if (toAdd.length) await must(db.from('match_players').insert(toAdd));
       // un invitado que sacaste del partido no vuelve a hacer falta
-      for (const r of removed) if (player(r.player_id)?.guest) await must(db.from('players').delete().eq('id', r.player_id));
+      for (const r of removed) {
+        const otherMatches = S.mp.some(x => x.player_id === r.player_id && x.match_id !== mid);
+        if (player(r.player_id)?.guest && !otherMatches) await must(db.from('players').delete().eq('id', r.player_id));
+      }
       closeModal(); toast('Partido guardado ✅'); refresh();
     } catch (er) { btn.disabled = false; err.textContent = er.message; }
   };

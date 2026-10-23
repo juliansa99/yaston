@@ -356,7 +356,7 @@ function render() {
       ${S.user ? `<div class="me" data-act="${S.meId ? 'perfil' : 'claim'}" data-id="${S.meId || ''}" title="${S.meId ? 'Mi perfil' : 'Elegir quién sos'}">${avatar}<span>${esc(name.split(' ')[0])}</span><button data-act="logout">Salir</button></div>`
         : '<button class="btn sm primary" data-act="login">Entrar con Google</button>'}
     </header>
-    <main class="wrap">${S.tab === 'tabla' || S.tab === 'partidos' ? gameBanner() : ''}${S.tab === 'perfil' ? viewPerfil() : S.tab === 'tabla' ? viewTabla() : S.tab === 'premios' ? viewPremios() : S.tab === 'juegos' ? viewJuegos() : S.tab === 'partidos' ? viewPartidos() : viewPlantel()}</main>
+    <main class="wrap">${S.tab === 'tabla' ? lastMatchCard() : ''}${S.tab === 'tabla' || S.tab === 'partidos' ? gameBanner() : ''}${S.tab === 'perfil' ? viewPerfil() : S.tab === 'tabla' ? viewTabla() : S.tab === 'premios' ? viewPremios() : S.tab === 'juegos' ? viewJuegos() : S.tab === 'partidos' ? viewPartidos() : viewPlantel()}</main>
     <nav class="tabs"><div class="in">
       ${[['tabla', '🏆', 'Tabla'], ['premios', '🏅', 'Premios'], ['partidos', '📅', 'Partidos'], ['plantel', '👥', 'Plantel'], ['juegos', '🎮', 'Juegos']]
         .map(([k, i, l]) => `<button data-act="tab" data-tab="${k}" class="${S.tab === k ? 'on' : ''}"><b>${i}</b>${l}</button>`).join('')}
@@ -912,6 +912,26 @@ function wrappedStory(id) {
   };
   document.onkeydown = e => { if (e.key === 'ArrowRight') $('#story-next')?.click(); else if (e.key === 'ArrowLeft') $('#story-prev')?.click(); else if (e.key === 'Escape') $('#story-x')?.click(); };
   draw();
+}
+
+/* ---------------- último partido: votar a la figura, bien a la vista ---------------- */
+function lastMatchCard() {
+  const done = S.matches.filter(m => m.result)
+    .sort((a, b) => b.played_on.localeCompare(a.played_on) || (b.created_at || '').localeCompare(a.created_at || ''));
+  const m = done[0]; if (!m) return '';
+  const parts = S.mp.filter(x => x.match_id === m.id); if (!parts.length) return '';
+  const days = (new Date(nowAR().iso + 'T12:00:00Z') - new Date(m.played_on + 'T12:00:00Z')) / 864e5;
+  if (!m.voting_open && days > 7) return ''; // la figura ya elegida se muestra una semana
+  const when = new Date(m.played_on + 'T12:00:00').toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' });
+  const pending = m.voting_open && parts.some(x => x.player_id === S.meId) && !S.myVotes[m.id];
+  return `<div class="lastmatch ${pending ? 'pending' : ''}">
+    <div class="eyebrow lm-when">Último partido · ${when}</div>
+    <h3>${m.result === 'D' ? 'El último partido terminó empatado' : `El último partido lo ganó el Equipo ${m.result} 🏆`}</h3>
+    ${m.voting_open ? `<p class="lm-cta">${pending ? '<b>¡Te falta votar!</b> ' : ''}Elegí quién fue la figura del partido.</p>${voteBox(m)}` : mvpBox(m)}
+    <div class="lm-foot">
+      <button class="link" data-act="tab" data-tab="partidos">Ver el partido completo ›</button>
+      ${S.isAdmin && m.voting_open ? `<button class="btn sm ghost" data-act="toggle-voting" data-id="${m.id}">🔒 Cerrar votación</button>` : ''}
+    </div></div>`;
 }
 
 function matchCard(m) {

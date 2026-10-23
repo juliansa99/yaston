@@ -423,3 +423,20 @@ nav.tabs button { font-size: .7rem; }
 .story-nav { position: absolute; top: 60px; bottom: 0; background: transparent; border: 0; z-index: 1; }
 .story-nav.prev { left: 0; width: 30%; }
 .story-nav.next { right: 0; width: 70%; }
+
+/* ---------- último partido ---------- */
+.lastmatch { margin: 0 0 14px; padding: 14px; border-radius: var(--radius); background: linear-gradient(160deg, rgba(255,210,63,.16), rgba(255,210,63,.05)); border: 1px solid rgba(255,210,63,.5); }
+.lastmatch.pending { box-shadow: 0 0 0 2px rgba(255,210,63,.55); animation: lmpulse 2.2s ease-in-out infinite; }
+@keyframes lmpulse { 50% { box-shadow: 0 0 0 5px rgba(255,210,63,.12); } }
+.lastmatch h3 { margin: 4px 0 6px; font-size: 1.15rem; }
+.lm-when::first-letter { text-transform: uppercase; }
+.lm-cta { margin: 0 0 4px; }
+.lastmatch .votebox { margin-top: 8px; }
+.lm-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+.link { background: none; border: 0; padding: 4px 0; color: var(--accent); font-weight: 600; }
+@media (prefers-reduced-motion: reduce) { .lastmatch.pending { animation: none; } }
+
+.lastmatch .votebox { padding: 10px; background: transparent; border-color: rgba(255,210,63,.35); }
+.lastmatch .votebox h4 { display: none; }
+.lastmatch .vopt .av { width: 44px; height: 44px; }
+.lastmatch .vgrid { margin-top: 6px; gap: 6px; }

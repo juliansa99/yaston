@@ -230,7 +230,7 @@ begin
   if auth.uid() is null then raise exception 'Tenés que entrar con Google para jugar'; end if;
   if me is null then raise exception 'Primero elegí quién sos (pestaña Plantel)'; end if;
   select count(*) into n from public.game_plays where user_id = auth.uid() and game = p_game and week = wk;
-  if n >= 3 then raise exception 'Ya usaste tus 3 intentos de esta semana'; end if;
+  if n >= 1 then raise exception 'Ya usaste tu intento de esta semana'; end if;  -- intentos por cuenta y por semana
   insert into public.game_plays (game, week, user_id, player_id) values (p_game, wk, auth.uid(), me) returning id into pid;
   return pid;
 end

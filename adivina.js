@@ -41,7 +41,7 @@ function mount(root, opts) {
     if (round >= rounds) { end(); return; }
     const m = order[round], swap = Math.random() < 0.5; // a veces se muestran los equipos al revés, para que no sirva "siempre el A"
     cur = { m, swap };
-    $('aq-when').textContent = `Partido ${round + 1} de ${rounds} · ${opts.label?.(m) || ''}`;
+    $('aq-when').textContent = `Partido ${round + 1} de ${rounds}`;
     $('aq-pitch').innerHTML = opts.pitch(m, { hide: true, swap, stat: true });
     $('aq-reveal').innerHTML = '';
     optBtns().forEach(b => { b.disabled = false; b.className = 'aq-opt ' + b.dataset.r.toLowerCase(); });
@@ -75,8 +75,8 @@ function mount(root, opts) {
     const text = ['Ni una. Te perdiste todos los jueves.', 'Uno solo. ¿Dónde estabas?', 'Dos. Te acordás a medias.', 'Tres. Buena memoria.', 'Cuatro. Casi sos el historiador del grupo.', '¡Pleno! Sos la memoria de los jueves. 🧠'][Math.min(score, 5)];
     const box = $('aq-end'); box.classList.remove('hidden');
     box.innerHTML = `<div class="pen-final"><b>${score} de ${rounds}</b><span>${esc(text)}</span>
-      ${saveErr ? `<small class="pen-err">${esc(saveErr)}</small>` : `<small>Tu mejor de la semana: ${best} de ${ROUNDS}</small>`}
-      ${left > 0 ? `<button class="btn primary" id="aq-again">Jugar de nuevo (te quedan ${left})</button>` : '<small>Ya usaste tus 3 intentos de esta semana.</small>'}
+      ${saveErr ? `<small class="pen-err">${esc(saveErr)}</small>` : `<small>${(opts.maxTries ?? 3) === 1 ? 'Tu resultado de la semana' : 'Tu mejor de la semana'}: ${best} de ${ROUNDS}</small>`}
+      ${left > 0 ? `<button class="btn primary" id="aq-again">Jugar de nuevo (te quedan ${left})</button>` : `<small>${(opts.maxTries ?? 3) === 1 ? 'Este era tu único intento de esta semana.' : `Ya usaste tus ${opts.maxTries ?? 3} intentos de esta semana.`}</small>`}
       <button class="btn ghost" id="aq-exit">Ver la tabla</button></div>`;
     $('aq-exit').onclick = () => opts.onExit?.();
     if (left > 0) $('aq-again').onclick = async () => {

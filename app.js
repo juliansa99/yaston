@@ -5,7 +5,8 @@ const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const app = $('#app');
 const PTS = { W: 3, D: 1, L: 0 };
-const MAX_TRIES = 3;
+const MAX_TRIES = 1; // intentos por cuenta y por semana (el tope real está en la función start_play de la base)
+const triesText = n => n === 1 ? 'tu único intento' : `tus ${n} intentos`;
 // Tabla final del Apertura 2026 (primera mitad del año): se jugaba con otro puntaje, así que queda fija.
 const APERTURA_2026 = [
   ['Chiqui Masla', 38, 12], ['Tomer', 34, 14], ['Tarlo', 30, 15], ['Webo', 28, 14], ['Guido', 27, 10], ['Peto', 27, 12],
@@ -329,7 +330,7 @@ function viewPerfil() {
     <div class="card">
       <div class="kv"><span>🏆 ${esc(tv.name)}</span><b>${rowV ? `${posV + 1}º · ${rowV.pts} pts (${rowV.pj} PJ)` : 'todavía no jugó'}</b></div>
       <div class="kv"><span>🏆 Apertura 2026</span><b>${ap ? `${ap.pos}º · ${num(ap.pts)} pts (${ap.asist} asist.)` : 'sin datos'}</b></div>
-      <div class="kv"><span>🎮 Juego de la semana</span><b>${mine ? `${boardRank}º · mejor ${mine.best}/5 (${mine.tries}/${MAX_TRIES} intentos)` : 'todavía no jugó'}</b></div>
+      <div class="kv"><span>🎮 Juego de la semana</span><b>${mine ? `${boardRank}º · ${MAX_TRIES === 1 ? 'resultado' : 'mejor'} ${mine.best}/5${MAX_TRIES > 1 ? ` (${mine.tries}/${MAX_TRIES} intentos)` : ''}` : 'todavía no jugó'}</b></div>
       <div class="kv"><span>Mejor racha</span><b>${st.bw} victoria${st.bw === 1 ? '' : 's'}</b></div>
       <div class="kv"><span>Peor racha</span><b>${st.bl} derrota${st.bl === 1 ? '' : 's'}</b></div>
       <div class="kv"><span>🤝 Mejor dupla</span><b>${dupla ? `${esc(dupla.q.name)} (${dupla.w}/${dupla.n})` : `todavía sin datos (mín. ${MIN})`}</b></div>
@@ -404,10 +405,10 @@ function viewJuegos() {
   let cta;
   if (!S.user) cta = '<button class="btn google sm" data-act="login">Entrar con Google para jugar</button>';
   else if (!S.meId) cta = '<button class="btn primary" data-act="claim">Elegí quién sos para jugar</button>';
-  else if (!left) cta = '<span class="muted small">Ya usaste tus 3 intentos. Se renuevan el lunes.</span>';
+  else if (!left) cta = `<span class="muted small">Ya usaste ${triesText(MAX_TRIES)}. Se renueva el lunes.</span>`;
   else cta = `<button class="btn primary" data-act="play">${used ? 'Jugar otra vez' : 'Jugar'}</button>`;
   const dots = S.user && S.meId ? `<div class="tries">${Array.from({ length: MAX_TRIES }, (_, k) => `<i class="${k < used ? 'used' : ''}"></i>`).join('')}
-      <span class="muted small">${left ? `Te quedan ${left} de ${MAX_TRIES} intentos` : 'Sin intentos'}${used ? ` · tu mejor: ${best} de 5` : ''}</span></div>` : '';
+      <span class="muted small">${left ? (MAX_TRIES === 1 ? '¡Tenés 1 solo intento!' : `Te quedan ${left} de ${MAX_TRIES} intentos`) : 'Sin intentos'}${used ? ` · ${MAX_TRIES === 1 ? 'tu resultado' : 'tu mejor'}: ${best} de 5` : ''}</span></div>` : '';
   const rows = S.board.map(b => ({ ...b, p: player(b.player_id) })).filter(r => r.p)
     .sort((a, b) => b.best - a.best || b.total - a.total || a.tries - b.tries || a.p.name.localeCompare(b.p.name));
   return `<div class="section-title"><h2>Juegos</h2></div>
@@ -422,15 +423,15 @@ function viewJuegos() {
       </div>
       ${dots}
       <div class="weekly-cta">${cta}</div>
-      <p class="legend" style="margin:10px 0 0">Hay un juego nuevo por semana. Cada cuenta de Google juega hasta ${MAX_TRIES} veces y en la tabla cuenta el mejor intento.</p>
+      <p class="legend" style="margin:10px 0 0">Hay un juego nuevo por semana. ${MAX_TRIES === 1 ? 'Cada cuenta de Google juega <b>una sola vez</b>. El intento se usa apenas empezás: si cerrás la página a mitad, se pierde.' : `Cada cuenta de Google juega hasta ${MAX_TRIES} veces y en la tabla cuenta el mejor intento.`}</p>
     </div>
     ${prevWeekCard()}
     <div class="section-title"><h2>Tabla de la semana</h2></div>
-    ${rows.length ? `<div class="table-wrap"><table class="tbl board"><thead><tr><th>#</th><th class="l">Jugador</th><th>Mejor</th><th>Total</th><th>Int.</th></tr></thead><tbody>
+    ${rows.length ? `<div class="table-wrap"><table class="tbl board ${MAX_TRIES === 1 ? 'solo' : ''}"><thead><tr><th>#</th><th class="l">Jugador</th><th>${MAX_TRIES === 1 ? 'Resultado' : 'Mejor'}</th>${MAX_TRIES > 1 ? '<th>Total</th><th>Int.</th>' : ''}</tr></thead><tbody>
       ${rows.map((r, i) => `<tr class="${i === 0 ? 'top1' : ''} ${r.p.id === S.meId ? 'mine' : ''}"><td class="pos">${i + 1}</td>
         <td class="l"><div class="pl">${av(r.p)}<span class="who"><span class="n">${esc(r.p.name)}</span></span></div></td>
-        <td class="pts">${r.best}<small>/5</small></td><td>${r.total}</td><td>${r.tries}/${MAX_TRIES}</td></tr>`).join('')}</tbody></table></div>
-      <p class="legend">Mejor: goles del mejor intento (de 5 penales). Total: goles sumando todos tus intentos. Int.: intentos usados.</p>`
+        <td class="pts">${r.best}<small>/5</small></td>${MAX_TRIES > 1 ? `<td>${r.total}</td><td>${r.tries}/${MAX_TRIES}</td>` : ''}</tr>`).join('')}</tbody></table></div>
+      ${MAX_TRIES > 1 ? '<p class="legend">Mejor: puntos del mejor intento (de 5). Total: puntos sumando todos tus intentos. Int.: intentos usados.</p>' : '<p class="legend">Resultado: puntos del único intento de la semana (de 5).</p>'}`
       : '<div class="empty">Todavía nadie jugó esta semana. ¡Sé el primero!</div>'}`;
 }
 
@@ -446,7 +447,8 @@ function mountGame() {
     matches: S.matches.filter(m => m.result && ['A', 'B'].every(t => S.mp.some(x => x.match_id === m.id && x.team === t))),
     pitch: (m, o) => pitchHtml(m, o), label: m => fmtDate(m.played_on),
     figure: m => { if (m.voting_open) return ''; const w = mvpWinners(m.id).winners; return w.length ? w.map(x => player(x.player_id)?.name || '?').join(' y ') : ''; },
-    tryLabel: () => `Intento ${S.plays.length} de ${MAX_TRIES}`,
+    tryLabel: () => MAX_TRIES === 1 ? 'Tu único intento de la semana' : `Intento ${S.plays.length} de ${MAX_TRIES}`,
+    maxTries: MAX_TRIES,
     attemptsLeft: left,
     best: () => S.plays.reduce((m, x) => Math.max(m, x.goals ?? 0), 0),
     onFinish: async goals => { const id = S.playId; S.playId = null; await must(db.rpc('finish_play', { p_play: id, p_goals: goals })); await loadGameData(); },

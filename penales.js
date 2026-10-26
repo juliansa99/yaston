@@ -62,9 +62,9 @@ function mount(root, opts) {
     const box = $('pen-end');
     box.classList.remove('hidden');
     box.innerHTML = `<div class="pen-final"><b>${goals} de ${SHOTS}</b><span>${esc(text)}</span>
-      ${saveErr ? `<small class="pen-err">${esc(saveErr)}</small>` : `<small>Tu mejor de la semana: ${best} de ${SHOTS}</small>`}
+      ${saveErr ? `<small class="pen-err">${esc(saveErr)}</small>` : `<small>${(opts.maxTries ?? 3) === 1 ? 'Tu resultado de la semana' : 'Tu mejor de la semana'}: ${best} de ${SHOTS}</small>`}
       ${left > 0 ? `<button class="btn primary" id="pen-again">Jugar de nuevo (te quedan ${left})</button>`
-        : '<small>Ya usaste tus 3 intentos de esta semana.</small>'}
+        : `<small>${(opts.maxTries ?? 3) === 1 ? 'Este era tu único intento de esta semana.' : `Ya usaste tus ${opts.maxTries ?? 3} intentos de esta semana.`}</small>`}
       <button class="btn ghost" id="pen-exit">Ver la tabla</button></div>`;
     $('pen-exit').onclick = () => opts.onExit?.();
     if (left > 0) $('pen-again').onclick = async () => {

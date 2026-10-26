@@ -30,7 +30,7 @@ const fmtShort = d => new Date(d + 'T12:00:00').toLocaleDateString('es-AR', { da
 // Un juego por semana. Cada entrada rige desde el lunes indicado; si no hay uno nuevo, sigue el último.
 const WEEKLY_GAMES = [
   { id: 'penales', from: '2026-10-19', title: 'Pateale Penales a Gure', blurb: 'Tanda de 5 penales. Tocá el arco y fijate si Gure la ataja.' },
-  { id: 'quien-es', from: '2026-10-26', title: '¿Quién es?', blurb: 'Una foto muy ampliada que se va aclarando. Adiviná de quién es entre 4 nombres. 5 rondas.' },
+  { id: 'adivina', from: '2026-10-26', title: '¿Quién ganó ese partido?', blurb: 'Te muestro los equipos de un partido viejo sin el resultado. Adiviná cómo terminó. 5 partidos al azar.' },
 ];
 const gameForWeek = wk => [...WEEKLY_GAMES].reverse().find(g => g.from <= wk) || null;
 
@@ -417,7 +417,7 @@ function viewJuegos() {
     <div class="card weekly">
       <div class="eyebrow">Juego de la semana · ${weekLabel(S.week)}</div>
       <div class="weekly-main">
-        ${g.id === 'penales' ? `<span class="gc-art">${gure ? av(gure, 'lg') : '<span class="av lg">G</span>'}<span class="gc-ball">⚽</span></span>` : '<span class="gc-art"><span class="av lg qmark">?</span></span>'}
+        ${g.id === 'penales' ? `<span class="gc-art">${gure ? av(gure, 'lg') : '<span class="av lg">G</span>'}<span class="gc-ball">⚽</span></span>` : '<span class="gc-art"><span class="av lg qmark">🏟️</span></span>'}
         <div class="gc-txt"><b>${esc(g.title)}</b><span class="muted small">${esc(g.blurb)}</span></div>
       </div>
       ${dots}
@@ -437,13 +437,15 @@ function viewJuegos() {
 function mountGame() {
   const g = currentGame();
   if (S.tab !== 'juegos' || S.game !== g.id || !S.playId || !$('#game-root')) return;
-  const mods = { penales: window.YastonPenales, 'quien-es': window.YastonQuienEs }, mod = mods[g.id];
+  const mods = { penales: window.YastonPenales, adivina: window.YastonAdivina }, mod = mods[g.id];
   if (!mod) return;
   const gure = S.players.find(p => !p.guest && p.name.trim().toLowerCase() === 'gure');
   const left = () => Math.max(0, MAX_TRIES - S.plays.length);
   mod.mount($('#game-root'), {
     name: gure?.name || 'Gure', photo: gure?.photo_url || null,
-    players: S.players.filter(p => !p.guest), excludeId: S.meId,
+    matches: S.matches.filter(m => m.result && ['A', 'B'].every(t => S.mp.some(x => x.match_id === m.id && x.team === t))),
+    pitch: (m, o) => pitchHtml(m, o), label: m => fmtDate(m.played_on),
+    figure: m => { if (m.voting_open) return ''; const w = mvpWinners(m.id).winners; return w.length ? w.map(x => player(x.player_id)?.name || '?').join(' y ') : ''; },
     tryLabel: () => `Intento ${S.plays.length} de ${MAX_TRIES}`,
     attemptsLeft: left,
     best: () => S.plays.reduce((m, x) => Math.max(m, x.goals ?? 0), 0),
@@ -547,10 +549,12 @@ function viewTabla() {
 }
 
 const FORMATIONS = { 1: [1], 2: [1, 1], 3: [1, 2], 4: [1, 1, 2], 5: [1, 2, 2], 6: [1, 2, 3], 7: [2, 2, 3] };
-function pitchHtml(m) {
-  const mvpIds = !m.voting_open ? mvpWinners(m.id).winners.map(w => w.player_id) : [];
+function pitchHtml(m, o = {}) {
+  const { hide = false, swap = false, stat = false } = o; // hide: sin resultado ni estrellas; swap: equipos al revés; stat: fichas sin tocar
+  const flip = t => swap ? (t === 'A' ? 'B' : 'A') : t;
+  const mvpIds = !hide && !m.voting_open ? mvpWinners(m.id).winners.map(w => w.player_id) : [];
   const toks = ['A', 'B'].map(t => {
-    const ps = S.mp.filter(x => x.match_id === m.id && x.team === t).map(x => player(x.player_id)).filter(Boolean)
+    const ps = S.mp.filter(x => x.match_id === m.id && x.team === flip(t)).map(x => player(x.player_id)).filter(Boolean)
       .sort((a, b) => a.name.localeCompare(b.name));
     const rows = FORMATIONS[Math.min(ps.length, 7)] || [3, 3, 3];
     const out = []; let k = 0;
@@ -558,15 +562,17 @@ function pitchHtml(m) {
       const y = 8 + r * 15;
       for (let c = 0; c < cnt && k < ps.length; c++, k++) {
         const p = ps[k], x = (c + 1) / (cnt + 1) * 100;
-        out.push(`<button class="p-tok ${t}" style="left:${x.toFixed(1)}%;top:${t === 'A' ? y : 100 - y}%" data-act="perfil" data-id="${p.id}" title="${esc(p.name)}">
-          <span class="p-av">${av(p)}${mvpIds.includes(p.id) ? '<span class="p-star">⭐</span>' : ''}</span><span class="p-name">${esc(p.name)}</span></button>`);
+        const inner = `<span class="p-av">${av(p)}${mvpIds.includes(p.id) ? '<span class="p-star">⭐</span>' : ''}</span><span class="p-name">${esc(p.name)}</span>`;
+        out.push(stat
+          ? `<span class="p-tok ${t}" style="left:${x.toFixed(1)}%;top:${t === 'A' ? y : 100 - y}%">${inner}</span>`
+          : `<button class="p-tok ${t}" style="left:${x.toFixed(1)}%;top:${t === 'A' ? y : 100 - y}%" data-act="perfil" data-id="${p.id}" title="${esc(p.name)}">${inner}</button>`);
       }
     });
     return out.join('');
   }).join('');
   return `<div class="pitch" role="group" aria-label="Equipos en la cancha">
     <i class="p-line"></i><i class="p-circle"></i><i class="p-box top"></i><i class="p-box bot"></i><i class="p-goal top"></i><i class="p-goal bot"></i>
-    <span class="p-tag a">EQUIPO A${m.result === 'A' ? ' 🏆' : ''}</span><span class="p-tag b">EQUIPO B${m.result === 'B' ? ' 🏆' : ''}</span>
+    <span class="p-tag a">EQUIPO A${!hide && m.result === flip('A') ? ' 🏆' : ''}</span><span class="p-tag b">EQUIPO B${!hide && m.result === flip('B') ? ' 🏆' : ''}</span>
     ${toks}</div>`;
 }
 

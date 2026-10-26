@@ -30,7 +30,9 @@ const fmtShort = d => new Date(d + 'T12:00:00').toLocaleDateString('es-AR', { da
 // Un juego por semana. Cada entrada rige desde el lunes indicado; si no hay uno nuevo, sigue el último.
 const WEEKLY_GAMES = [
   { id: 'penales', from: '2026-10-19', title: 'Pateale Penales a Gure', blurb: 'Tanda de 5 penales. Tocá el arco y fijate si Gure la ataja.' },
+  { id: 'quien-es', from: '2026-10-26', title: '¿Quién es?', blurb: 'Una foto muy ampliada que se va aclarando. Adiviná de quién es entre 4 nombres. 5 rondas.' },
 ];
+const gameForWeek = wk => [...WEEKLY_GAMES].reverse().find(g => g.from <= wk) || null;
 
 if (!cfg.SUPABASE_URL || !cfg.SUPABASE_ANON_KEY) {
   app.innerHTML = `<div class="center-screen"><div class="card setup">
@@ -42,7 +44,7 @@ const db = supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
 
 const S = {
   user: null, isAdmin: false, meId: null, tab: 'tabla', game: null, torneo: null, sort: 'pts',
-  sims: {}, perfilId: null, prevTab: null, raceSel: null, raceMode: 'pts', week: null, board: [], plays: [], playId: null,
+  sims: {}, prev: null, perfilId: null, prevTab: null, raceSel: null, raceMode: 'pts', week: null, board: [], plays: [], playId: null,
   players: [], emails: {}, matches: [], mp: [], mvp: [], totals: {}, myVotes: {}, unclaimed: [],
 };
 
@@ -104,10 +106,7 @@ function maybeClaim() {
   if (S.user && !S.meId && S.unclaimed.length && !skipped && !$('#modal-root .overlay')) claimModal();
 }
 
-function currentGame() {
-  const wk = S.week || '0000';
-  return [...WEEKLY_GAMES].reverse().find(g => g.from <= wk) || WEEKLY_GAMES[WEEKLY_GAMES.length - 1];
-}
+function currentGame() { return gameForWeek(S.week || '0000') || WEEKLY_GAMES[WEEKLY_GAMES.length - 1]; }
 async function loadGameData() {
   S.week = await must(db.rpc('current_week'));
   const id = currentGame().id;
@@ -116,6 +115,20 @@ async function loadGameData() {
     S.user ? must(db.from('game_plays').select('id,goals').eq('game', id).eq('week', S.week)) : [],
   ]);
   S.board = board; S.plays = plays;
+  // resultado de la semana pasada (para anunciar al ganador)
+  const prevWeek = addDays(S.week, -7), pg = gameForWeek(prevWeek);
+  S.prev = null;
+  if (pg) {
+    try { S.prev = { game: pg, week: prevWeek, rows: await must(db.rpc('game_board_week', { p_game: pg.id, p_week: prevWeek })) }; } catch { S.prev = null; }
+  }
+}
+function prevResult() {
+  if (!S.prev || !S.prev.rows.length) return null;
+  const rows = S.prev.rows.map(r => ({ ...r, p: player(r.player_id) })).filter(r => r.p)
+    .sort((a, b) => b.best - a.best || b.total - a.total || a.tries - b.tries || a.p.name.localeCompare(b.p.name));
+  if (!rows.length) return null;
+  const f = rows[0], winners = rows.filter(r => r.best === f.best && r.total === f.total && r.tries === f.tries);
+  return { game: S.prev.game, week: S.prev.week, rows, winners };
 }
 const weekLabel = wk => {
   const d = new Date(wk + 'T12:00:00'), e = new Date(d); e.setDate(d.getDate() + 6);
@@ -356,7 +369,7 @@ function render() {
       ${S.user ? `<div class="me" data-act="${S.meId ? 'perfil' : 'claim'}" data-id="${S.meId || ''}" title="${S.meId ? 'Mi perfil' : 'Elegir quién sos'}">${avatar}<span>${esc(name.split(' ')[0])}</span><button data-act="logout">Salir</button></div>`
         : '<button class="btn sm primary" data-act="login">Entrar con Google</button>'}
     </header>
-    <main class="wrap">${S.tab === 'tabla' ? lastMatchCard() : ''}${S.tab === 'tabla' || S.tab === 'partidos' ? gameBanner() : ''}${S.tab === 'perfil' ? viewPerfil() : S.tab === 'tabla' ? viewTabla() : S.tab === 'premios' ? viewPremios() : S.tab === 'juegos' ? viewJuegos() : S.tab === 'partidos' ? viewPartidos() : viewPlantel()}</main>
+    <main class="wrap">${S.tab === 'tabla' ? lastMatchCard() + gameNews() : ''}${S.tab === 'tabla' || S.tab === 'partidos' ? gameBanner() : ''}${S.tab === 'perfil' ? viewPerfil() : S.tab === 'tabla' ? viewTabla() : S.tab === 'premios' ? viewPremios() : S.tab === 'juegos' ? viewJuegos() : S.tab === 'partidos' ? viewPartidos() : viewPlantel()}</main>
     <nav class="tabs"><div class="in">
       ${[['tabla', '🏆', 'Tabla'], ['premios', '🏅', 'Premios'], ['partidos', '📅', 'Partidos'], ['plantel', '👥', 'Plantel'], ['juegos', '🎮', 'Juegos']]
         .map(([k, i, l]) => `<button data-act="tab" data-tab="${k}" class="${S.tab === k ? 'on' : ''}"><b>${i}</b>${l}</button>`).join('')}
@@ -365,6 +378,21 @@ function render() {
   bindPerfil();
 }
 
+function prevWeekCard() {
+  const r = prevResult(); if (!r) return '';
+  const w = r.winners, rest = r.rows.filter(x => !w.includes(x)).slice(0, 2);
+  return `<div class="card prevweek"><div class="eyebrow">🏆 Ganador de la semana pasada · ${weekLabel(r.week)}</div>
+    <div class="weekly-main"><span class="avs">${w.map(x => av(x.p, 'lg')).join('')}</span>
+      <div class="gc-txt"><b>${esc(w.map(x => x.p.name).join(' y '))}</b>
+        <span class="muted small">${w.length > 1 ? 'Empataron' : 'Ganó'} ${esc(r.game.title)} con ${w[0].best} de 5 (${w[0].tries} intento${w[0].tries === 1 ? '' : 's'}).</span></div></div>
+    ${rest.length ? `<div class="small muted" style="margin-top:8px">${rest.map((x, i) => `${w.length + i + 1}º ${esc(x.p.name)} (${x.best}/5)`).join(' · ')}</div>` : ''}</div>`;
+}
+function gameNews() { // aviso arriba de la Tabla: quién ganó el juego de la semana pasada y cuál es el de esta
+  const r = prevResult(), g = currentGame(); if (!r) return '';
+  const w = r.winners.map(x => esc(x.p.name)).join(' y ');
+  return `<div class="gamenews"><div class="small">🏆 ${r.winners.length > 1 ? 'Empataron' : 'Ganó'} el juego de la semana pasada (${esc(r.game.title)}): <b>${w}</b> con ${r.winners[0].best} de 5.
+    Esta semana: <b>${esc(g.title)}</b>.</div><button class="btn sm" data-act="tab" data-tab="juegos">Jugar</button></div>`;
+}
 function viewJuegos() {
   const g = currentGame();
   if (S.game === g.id && S.playId) {
@@ -389,13 +417,14 @@ function viewJuegos() {
     <div class="card weekly">
       <div class="eyebrow">Juego de la semana · ${weekLabel(S.week)}</div>
       <div class="weekly-main">
-        <span class="gc-art">${gure ? av(gure, 'lg') : '<span class="av lg">G</span>'}<span class="gc-ball">⚽</span></span>
+        ${g.id === 'penales' ? `<span class="gc-art">${gure ? av(gure, 'lg') : '<span class="av lg">G</span>'}<span class="gc-ball">⚽</span></span>` : '<span class="gc-art"><span class="av lg qmark">?</span></span>'}
         <div class="gc-txt"><b>${esc(g.title)}</b><span class="muted small">${esc(g.blurb)}</span></div>
       </div>
       ${dots}
       <div class="weekly-cta">${cta}</div>
       <p class="legend" style="margin:10px 0 0">Hay un juego nuevo por semana. Cada cuenta de Google juega hasta ${MAX_TRIES} veces y en la tabla cuenta el mejor intento.</p>
     </div>
+    ${prevWeekCard()}
     <div class="section-title"><h2>Tabla de la semana</h2></div>
     ${rows.length ? `<div class="table-wrap"><table class="tbl board"><thead><tr><th>#</th><th class="l">Jugador</th><th>Mejor</th><th>Total</th><th>Int.</th></tr></thead><tbody>
       ${rows.map((r, i) => `<tr class="${i === 0 ? 'top1' : ''} ${r.p.id === S.meId ? 'mine' : ''}"><td class="pos">${i + 1}</td>
@@ -408,10 +437,13 @@ function viewJuegos() {
 function mountGame() {
   const g = currentGame();
   if (S.tab !== 'juegos' || S.game !== g.id || !S.playId || !$('#game-root')) return;
+  const mods = { penales: window.YastonPenales, 'quien-es': window.YastonQuienEs }, mod = mods[g.id];
+  if (!mod) return;
   const gure = S.players.find(p => !p.guest && p.name.trim().toLowerCase() === 'gure');
   const left = () => Math.max(0, MAX_TRIES - S.plays.length);
-  window.YastonPenales?.mount($('#game-root'), {
+  mod.mount($('#game-root'), {
     name: gure?.name || 'Gure', photo: gure?.photo_url || null,
+    players: S.players.filter(p => !p.guest), excludeId: S.meId,
     tryLabel: () => `Intento ${S.plays.length} de ${MAX_TRIES}`,
     attemptsLeft: left,
     best: () => S.plays.reduce((m, x) => Math.max(m, x.goals ?? 0), 0),

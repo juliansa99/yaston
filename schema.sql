@@ -258,3 +258,15 @@ $fn$;
 revoke all on function public.current_week(), public.game_board(text), public.start_play(text), public.finish_play(uuid, int) from public, anon;
 grant execute on function public.current_week(), public.game_board(text) to anon, authenticated;
 grant execute on function public.start_play(text), public.finish_play(uuid, int) to authenticated;
+
+-- Resultados de una semana puntual (para anunciar al ganador de la semana pasada)
+create or replace function public.game_board_week(p_game text, p_week date)
+returns table (player_id uuid, best int, total int, tries int)
+language sql stable security definer set search_path = public as $fn$
+  select g.player_id, max(coalesce(g.goals, 0))::int, sum(coalesce(g.goals, 0))::int, count(*)::int
+  from public.game_plays g
+  where g.game = p_game and g.week = p_week
+  group by g.player_id
+$fn$;
+revoke all on function public.game_board_week(text, date) from public, anon;
+grant execute on function public.game_board_week(text, date) to anon, authenticated;

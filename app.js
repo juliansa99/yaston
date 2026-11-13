@@ -28,11 +28,11 @@ const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${Stri
 const torneoActual = () => TORNEOS.find(t => t.from <= todayISO() && todayISO() <= t.to) || TORNEOS[0];
 const num = (n, d = 2) => Number(n).toLocaleString('es-AR', { maximumFractionDigits: d });
 const fmtShort = d => new Date(d + 'T12:00:00').toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' });
-// Un juego por semana. Cada entrada rige desde el lunes indicado; si no hay uno nuevo, sigue el último.
+// Un juego por semana, de viernes a viernes. Cada entrada rige desde el viernes indicado; si no hay uno nuevo, sigue el último.
 const WEEKLY_GAMES = [
-  { id: 'penales', from: '2026-10-19', max: 5, title: 'Pateale Penales a Gure', blurb: 'Tanda de 5 penales. Tocá el arco y fijate si Gure la ataja.' },
-  { id: 'adivina', from: '2026-10-26', max: 5, title: '¿Quién ganó ese partido?', blurb: 'Te muestro los equipos de un partido viejo sin el resultado. Adiviná cómo terminó. 5 partidos al azar.' },
-  { id: 'fito', from: '2026-11-09', max: 10, quiz: true, title: '¿Cuánto conocés a Fito?', blurb: '10 preguntas con 4 opciones sobre Fito. ¿Quién lo conoce mejor del grupo?' },
+  { id: 'penales', from: '2026-10-16', max: 5, title: 'Pateale Penales a Gure', blurb: 'Tanda de 5 penales. Tocá el arco y fijate si Gure la ataja.' },
+  { id: 'adivina', from: '2026-10-23', max: 5, title: '¿Quién ganó ese partido?', blurb: 'Te muestro los equipos de un partido viejo sin el resultado. Adiviná cómo terminó. 5 partidos al azar.' },
+  { id: 'fito', from: '2026-11-13', max: 10, quiz: true, title: '¿Cuánto conocés a Fito?', blurb: '10 preguntas con 4 opciones sobre Fito. ¿Quién lo conoce mejor del grupo?' },
 ];
 const gameForWeek = wk => [...WEEKLY_GAMES].reverse().find(g => g.from <= wk) || null;
 
@@ -130,7 +130,7 @@ function prevResult() {
   return { game: S.prev.game, week: S.prev.week, rows, winners };
 }
 const weekLabel = wk => {
-  const d = new Date(wk + 'T12:00:00'), e = new Date(d); e.setDate(d.getDate() + 6);
+  const d = new Date(wk + 'T12:00:00'), e = new Date(d); e.setDate(d.getDate() + 7); // de viernes a viernes: el siguiente viernes se renueva
   const m = x => x.toLocaleDateString('es-AR', { month: 'long' });
   return d.getMonth() === e.getMonth() ? `${d.getDate()} al ${e.getDate()} de ${m(e)}` : `${d.getDate()} de ${m(d)} al ${e.getDate()} de ${m(e)}`;
 };
@@ -381,7 +381,7 @@ function viewJuegos() {
   else if (!S.meId) cta = '<button class="btn primary" data-act="claim">Elegí quién sos para jugar</button>';
   else if (g.quiz && !S.quiz) cta = '<span class="muted small">Este juego todavía no está listo. En un rato se habilita.</span>';
   else if (isSubject) cta = '<button class="btn primary" data-act="play">Probar el juego (no suma puntos)</button>';
-  else if (!left) cta = `<span class="muted small">Ya usaste ${triesText(MAX_TRIES)}. Se renueva el lunes.</span>`;
+  else if (!left) cta = `<span class="muted small">Ya usaste ${triesText(MAX_TRIES)}. Se renueva el viernes.</span>`;
   else cta = `<button class="btn primary" data-act="play">${used ? 'Jugar otra vez' : 'Jugar'}</button>`;
   const dots = isSubject ? '<div class="muted small">Este juego es sobre vos: podés probarlo para ver cómo queda, pero no suma puntos ni aparecés en la tabla.</div>' : S.user && S.meId ? `<div class="tries">${Array.from({ length: MAX_TRIES }, (_, k) => `<i class="${k < used ? 'used' : ''}"></i>`).join('')}
       <span class="muted small">${left ? (MAX_TRIES === 1 ? '¡Tenés 1 solo intento!' : `Te quedan ${left} de ${MAX_TRIES} intentos`) : 'Sin intentos'}${used ? ` · ${MAX_TRIES === 1 ? 'tu resultado' : 'tu mejor'}: ${best} de ${g.max}` : ''}</span></div>` : '';
@@ -399,7 +399,7 @@ function viewJuegos() {
       </div>
       ${dots}
       <div class="weekly-cta">${cta}</div>
-      <p class="legend" style="margin:10px 0 0">Hay un juego nuevo por semana. ${MAX_TRIES === 1 ? 'Cada cuenta de Google juega <b>una sola vez</b>. El intento se usa apenas empezás: si cerrás la página a mitad, se pierde.' : `Cada cuenta de Google juega hasta ${MAX_TRIES} veces y en la tabla cuenta el mejor intento.`}</p>
+      <p class="legend" style="margin:10px 0 0">Hay un juego nuevo cada viernes. ${MAX_TRIES === 1 ? 'Cada cuenta de Google juega <b>una sola vez</b>. El intento se usa apenas empezás: si cerrás la página a mitad, se pierde.' : `Cada cuenta de Google juega hasta ${MAX_TRIES} veces y en la tabla cuenta el mejor intento.`}</p>
     </div>
     ${prevWeekCard()}
     <div class="section-title"><h2>Tabla de la semana</h2></div>

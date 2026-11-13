@@ -216,7 +216,9 @@ create policy plays_own on public.game_plays for select to authenticated using (
 
 create or replace function public.current_week() returns date
 language sql stable set search_path = public as $fn$
-  select (date_trunc('week', now() at time zone 'America/Argentina/Buenos_Aires'))::date
+  -- Los juegos van de viernes a viernes: devuelve el viernes más reciente (hoy, si es viernes), en hora de Buenos Aires.
+  select ((now() at time zone 'America/Argentina/Buenos_Aires')::date
+          - ((extract(dow from (now() at time zone 'America/Argentina/Buenos_Aires'))::int - 5 + 7) % 7))
 $fn$;
 
 create or replace function public.start_play(p_game text) returns uuid

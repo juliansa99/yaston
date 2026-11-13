@@ -1,0 +1,23 @@
+name: Mantener activa la base
+
+# Supabase (plan gratis) pausa el proyecto si pasa una semana sin uso.
+# Esta tarea le hace una consulta cada lunes y jueves para que cuente como actividad.
+# Si la base no responde, la tarea falla y GitHub te avisa por mail.
+on:
+  schedule:
+    - cron: '17 12 * * 1,4'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Consultar la base
+        run: |
+          code=$(curl -sS -m 30 -o resp.json -w '%{http_code}' -X POST \
+            'https://bcbseavoktidihqnmmwf.supabase.co/rest/v1/rpc/current_week' \
+            -H 'apikey: sb_publishable_WYlLutDOYB7awRmsnFpPGQ_x-3VUyQn' \
+            -H 'Authorization: Bearer sb_publishable_WYlLutDOYB7awRmsnFpPGQ_x-3VUyQn' \
+            -H 'Content-Type: application/json' -d '{}') || code=000
+          echo "Respuesta: $code"; cat resp.json 2>/dev/null; echo
+          if [ "$code" != "200" ]; then echo "::error::La base de Yaston no responde (puede estar pausada). Restauralo en el panel de Supabase."; exit 1; fi

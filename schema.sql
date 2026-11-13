@@ -270,3 +270,89 @@ language sql stable security definer set search_path = public as $fn$
 $fn$;
 revoke all on function public.game_board_week(text, date) from public, anon;
 grant execute on function public.game_board_week(text, date) to anon, authenticated;
+
+-- 6) CUESTIONARIO ("¿Cuánto conocés a X?"): preguntas y respuestas viven en la base.
+--    Las respuestas correctas NO se pueden leer desde la página: solo las funciones las usan.
+--    (Las preguntas y respuestas concretas se cargan por separado, no están en este archivo.)
+alter table public.game_plays drop constraint if exists game_plays_goals_check;
+alter table public.game_plays add constraint game_plays_goals_check check (goals between 0 and 10);
+
+create or replace function public.finish_play(p_play uuid, p_goals int) returns void
+language plpgsql security definer set search_path = public as $fn$
+begin
+  update public.game_plays
+     set goals = greatest(0, least(10, p_goals)), finished_at = now()
+   where id = p_play and user_id = auth.uid() and goals is null;
+  if not found then raise exception 'Ese intento no es válido o ya terminó'; end if;
+end
+$fn$;
+
+create table if not exists public.quiz_config (
+  game       text primary key,
+  subject_id uuid not null references public.players(id) on delete cascade   -- de quién es el cuestionario (no puntúa)
+);
+create table if not exists public.quiz_questions (
+  game text not null, n int not null, question text not null,
+  options text[] not null, answer int not null,                               -- answer = posición 0-based de la correcta
+  primary key (game, n)
+);
+alter table public.quiz_config enable row level security;
+alter table public.quiz_questions enable row level security;                  -- sin políticas: solo se accede por funciones
+
+create or replace function public.quiz_info(p_game text) returns table (subject_id uuid, total int)
+language sql stable security definer set search_path = public as $fn$
+  select c.subject_id, (select count(*)::int from public.quiz_questions q where q.game = c.game)
+  from public.quiz_config c where c.game = p_game
+$fn$;
+
+create or replace function public.quiz_questions_get(p_game text) returns table (n int, question text, options text[])
+language sql stable security definer set search_path = public as $fn$
+  select q.n, q.question, q.options from public.quiz_questions q where q.game = p_game order by q.n
+$fn$;
+
+create or replace function public.quiz_finish(p_game text, p_play uuid, p_answers int[]) returns table (score int, correct int[])
+language plpgsql security definer set search_path = public as $fn$
+declare
+  me uuid := public.my_player_id();
+  subj uuid; corr int[]; sc int := 0; i int;
+begin
+  if auth.uid() is null then raise exception 'Tenés que entrar con Google'; end if;
+  select c.subject_id into subj from public.quiz_config c where c.game = p_game;
+  select array_agg(q.answer order by q.n) into corr from public.quiz_questions q where q.game = p_game;
+  if corr is null then raise exception 'Este juego todavía no está cargado'; end if;
+  for i in 1 .. array_length(corr, 1) loop
+    if p_answers[i] is not distinct from corr[i] then sc := sc + 1; end if;
+  end loop;
+  if me is not null and me = subj then            -- el dueño del cuestionario solo prueba: no suma puntos
+    return query select sc, corr;
+    return;
+  end if;
+  if p_play is null then raise exception 'Intento inválido'; end if;
+  update public.game_plays set goals = sc, finished_at = now()
+   where id = p_play and user_id = auth.uid() and game = p_game and goals is null;
+  if not found then raise exception 'Ese intento no es válido o ya terminó'; end if;
+  return query select sc, null::int[];             -- a los demás no se les muestran las correctas
+end
+$fn$;
+
+create or replace function public.start_play(p_game text) returns uuid
+language plpgsql security definer set search_path = public as $fn$
+declare
+  me uuid := public.my_player_id();
+  wk date := public.current_week();
+  n int;
+  pid uuid;
+begin
+  if auth.uid() is null then raise exception 'Tenés que entrar con Google para jugar'; end if;
+  if me is null then raise exception 'Primero elegí quién sos (pestaña Plantel)'; end if;
+  if exists (select 1 from public.quiz_config c where c.game = p_game and c.subject_id = me) then return null; end if;  -- el dueño no gasta intento
+  select count(*) into n from public.game_plays where user_id = auth.uid() and game = p_game and week = wk;
+  if n >= 1 then raise exception 'Ya usaste tu intento de esta semana'; end if;  -- intentos por cuenta y por semana
+  insert into public.game_plays (game, week, user_id, player_id) values (p_game, wk, auth.uid(), me) returning id into pid;
+  return pid;
+end
+$fn$;
+
+revoke all on function public.quiz_info(text), public.quiz_questions_get(text), public.quiz_finish(text, uuid, int[]), public.start_play(text) from public, anon;
+grant execute on function public.quiz_info(text) to anon, authenticated;
+grant execute on function public.quiz_questions_get(text), public.quiz_finish(text, uuid, int[]), public.start_play(text) to authenticated;

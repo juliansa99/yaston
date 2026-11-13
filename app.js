@@ -30,8 +30,9 @@ const num = (n, d = 2) => Number(n).toLocaleString('es-AR', { maximumFractionDig
 const fmtShort = d => new Date(d + 'T12:00:00').toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' });
 // Un juego por semana. Cada entrada rige desde el lunes indicado; si no hay uno nuevo, sigue el último.
 const WEEKLY_GAMES = [
-  { id: 'penales', from: '2026-10-19', title: 'Pateale Penales a Gure', blurb: 'Tanda de 5 penales. Tocá el arco y fijate si Gure la ataja.' },
-  { id: 'adivina', from: '2026-10-26', title: '¿Quién ganó ese partido?', blurb: 'Te muestro los equipos de un partido viejo sin el resultado. Adiviná cómo terminó. 5 partidos al azar.' },
+  { id: 'penales', from: '2026-10-19', max: 5, title: 'Pateale Penales a Gure', blurb: 'Tanda de 5 penales. Tocá el arco y fijate si Gure la ataja.' },
+  { id: 'adivina', from: '2026-10-26', max: 5, title: '¿Quién ganó ese partido?', blurb: 'Te muestro los equipos de un partido viejo sin el resultado. Adiviná cómo terminó. 5 partidos al azar.' },
+  { id: 'fito', from: '2026-11-09', max: 10, quiz: true, title: '¿Cuánto conocés a Fito?', blurb: '10 preguntas con 4 opciones sobre Fito. ¿Quién lo conoce mejor del grupo?' },
 ];
 const gameForWeek = wk => [...WEEKLY_GAMES].reverse().find(g => g.from <= wk) || null;
 
@@ -45,7 +46,7 @@ const db = supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
 
 const S = {
   user: null, isAdmin: false, meId: null, tab: 'tabla', game: null, torneo: null, sort: 'pts',
-  sims: {}, prev: null, perfilId: null, prevTab: null, raceSel: null, raceMode: 'pts', week: null, board: [], plays: [], playId: null,
+  sims: {}, prev: null, quiz: null, perfilId: null, prevTab: null, raceSel: null, raceMode: 'pts', week: null, board: [], plays: [], playId: null,
   players: [], emails: {}, matches: [], mp: [], unclaimed: [],
 };
 
@@ -111,6 +112,8 @@ async function loadGameData() {
     S.user ? must(db.from('game_plays').select('id,goals').eq('game', id).eq('week', S.week)) : [],
   ]);
   S.board = board; S.plays = plays;
+  S.quiz = null;
+  if (currentGame().quiz) { try { S.quiz = (await must(db.rpc('quiz_info', { p_game: id })))[0] || null; } catch { S.quiz = null; } }
   // resultado de la semana pasada (para anunciar al ganador)
   const prevWeek = addDays(S.week, -7), pg = gameForWeek(prevWeek);
   S.prev = null;
@@ -300,7 +303,7 @@ function viewPerfil() {
     <div class="card">
       <div class="kv"><span>🏆 ${esc(tv.name)}</span><b>${rowV ? `${posV + 1}º · ${rowV.pts} pts (${rowV.pj} PJ)` : 'todavía no jugó'}</b></div>
       <div class="kv"><span>🏆 Apertura 2026</span><b>${ap ? `${ap.pos}º · ${num(ap.pts)} pts (${ap.asist} asist.)` : 'sin datos'}</b></div>
-      <div class="kv"><span>🎮 Juego de la semana</span><b>${mine ? `${boardRank}º · ${MAX_TRIES === 1 ? 'resultado' : 'mejor'} ${mine.best}/5${MAX_TRIES > 1 ? ` (${mine.tries}/${MAX_TRIES} intentos)` : ''}` : 'todavía no jugó'}</b></div>
+      <div class="kv"><span>🎮 Juego de la semana</span><b>${mine ? `${boardRank}º · ${MAX_TRIES === 1 ? 'resultado' : 'mejor'} ${mine.best}/${currentGame().max}${MAX_TRIES > 1 ? ` (${mine.tries}/${MAX_TRIES} intentos)` : ''}` : 'todavía no jugó'}</b></div>
       <div class="kv"><span>Mejor racha</span><b>${st.bw} victoria${st.bw === 1 ? '' : 's'}</b></div>
       <div class="kv"><span>Peor racha</span><b>${st.bl} derrota${st.bl === 1 ? '' : 's'}</b></div>
       <div class="kv"><span>🤝 Mejor dupla</span><b>${dupla ? `${esc(dupla.q.name)} (${dupla.w}/${dupla.n})` : `todavía sin datos (mín. ${MIN})`}</b></div>
@@ -355,13 +358,13 @@ function prevWeekCard() {
   return `<div class="card prevweek"><div class="eyebrow">🏆 Ganador de la semana pasada · ${weekLabel(r.week)}</div>
     <div class="weekly-main"><span class="avs">${w.map(x => av(x.p, 'lg')).join('')}</span>
       <div class="gc-txt"><b>${esc(w.map(x => x.p.name).join(' y '))}</b>
-        <span class="muted small">${w.length > 1 ? 'Empataron' : 'Ganó'} ${esc(r.game.title)} con ${w[0].best} de 5 (${w[0].tries} intento${w[0].tries === 1 ? '' : 's'}).</span></div></div>
-    ${rest.length ? `<div class="small muted" style="margin-top:8px">${rest.map((x, i) => `${w.length + i + 1}º ${esc(x.p.name)} (${x.best}/5)`).join(' · ')}</div>` : ''}</div>`;
+        <span class="muted small">${w.length > 1 ? 'Empataron' : 'Ganó'} ${esc(r.game.title)} con ${w[0].best} de ${r.game.max} (${w[0].tries} intento${w[0].tries === 1 ? '' : 's'}).</span></div></div>
+    ${rest.length ? `<div class="small muted" style="margin-top:8px">${rest.map((x, i) => `${w.length + i + 1}º ${esc(x.p.name)} (${x.best}/${r.game.max})`).join(' · ')}</div>` : ''}</div>`;
 }
 function gameNews() { // aviso arriba de la Tabla: quién ganó el juego de la semana pasada y cuál es el de esta
   const r = prevResult(), g = currentGame(); if (!r) return '';
   const w = r.winners.map(x => esc(x.p.name)).join(' y ');
-  return `<div class="gamenews"><div class="small">🏆 ${r.winners.length > 1 ? 'Empataron' : 'Ganó'} el juego de la semana pasada (${esc(r.game.title)}): <b>${w}</b> con ${r.winners[0].best} de 5.
+  return `<div class="gamenews"><div class="small">🏆 ${r.winners.length > 1 ? 'Empataron' : 'Ganó'} el juego de la semana pasada (${esc(r.game.title)}): <b>${w}</b> con ${r.winners[0].best} de ${r.game.max}.
     Esta semana: <b>${esc(g.title)}</b>.</div><button class="btn sm" data-act="tab" data-tab="juegos">Jugar</button></div>`;
 }
 function viewJuegos() {
@@ -372,13 +375,16 @@ function viewJuegos() {
   const used = S.plays.length, left = Math.max(0, MAX_TRIES - used);
   const best = S.plays.reduce((m, x) => Math.max(m, x.goals ?? 0), 0);
   const gure = S.players.find(p => !p.guest && p.name.trim().toLowerCase() === 'gure');
+  const isSubject = !!(g.quiz && S.quiz && S.meId && S.quiz.subject_id === S.meId);
   let cta;
   if (!S.user) cta = '<button class="btn google sm" data-act="login">Entrar con Google para jugar</button>';
   else if (!S.meId) cta = '<button class="btn primary" data-act="claim">Elegí quién sos para jugar</button>';
+  else if (g.quiz && !S.quiz) cta = '<span class="muted small">Este juego todavía no está listo. En un rato se habilita.</span>';
+  else if (isSubject) cta = '<button class="btn primary" data-act="play">Probar el juego (no suma puntos)</button>';
   else if (!left) cta = `<span class="muted small">Ya usaste ${triesText(MAX_TRIES)}. Se renueva el lunes.</span>`;
   else cta = `<button class="btn primary" data-act="play">${used ? 'Jugar otra vez' : 'Jugar'}</button>`;
-  const dots = S.user && S.meId ? `<div class="tries">${Array.from({ length: MAX_TRIES }, (_, k) => `<i class="${k < used ? 'used' : ''}"></i>`).join('')}
-      <span class="muted small">${left ? (MAX_TRIES === 1 ? '¡Tenés 1 solo intento!' : `Te quedan ${left} de ${MAX_TRIES} intentos`) : 'Sin intentos'}${used ? ` · ${MAX_TRIES === 1 ? 'tu resultado' : 'tu mejor'}: ${best} de 5` : ''}</span></div>` : '';
+  const dots = isSubject ? '<div class="muted small">Este juego es sobre vos: podés probarlo para ver cómo queda, pero no suma puntos ni aparecés en la tabla.</div>' : S.user && S.meId ? `<div class="tries">${Array.from({ length: MAX_TRIES }, (_, k) => `<i class="${k < used ? 'used' : ''}"></i>`).join('')}
+      <span class="muted small">${left ? (MAX_TRIES === 1 ? '¡Tenés 1 solo intento!' : `Te quedan ${left} de ${MAX_TRIES} intentos`) : 'Sin intentos'}${used ? ` · ${MAX_TRIES === 1 ? 'tu resultado' : 'tu mejor'}: ${best} de ${g.max}` : ''}</span></div>` : '';
   const rows = S.board.map(b => ({ ...b, p: player(b.player_id) })).filter(r => r.p)
     .sort((a, b) => b.best - a.best || b.total - a.total || a.tries - b.tries || a.p.name.localeCompare(b.p.name));
   return `<div class="section-title"><h2>Juegos</h2></div>
@@ -388,7 +394,7 @@ function viewJuegos() {
     <div class="card weekly">
       <div class="eyebrow">Juego de la semana · ${weekLabel(S.week)}</div>
       <div class="weekly-main">
-        ${g.id === 'penales' ? `<span class="gc-art">${gure ? av(gure, 'lg') : '<span class="av lg">G</span>'}<span class="gc-ball">⚽</span></span>` : '<span class="gc-art"><span class="av lg qmark">🏟️</span></span>'}
+        ${g.id === 'penales' ? `<span class="gc-art">${gure ? av(gure, 'lg') : '<span class="av lg">G</span>'}<span class="gc-ball">⚽</span></span>` : g.quiz ? `<span class="gc-art">${av(player(S.quiz?.subject_id) || null, 'lg')}<span class="gc-ball">❓</span></span>` : '<span class="gc-art"><span class="av lg qmark">🏟️</span></span>'}
         <div class="gc-txt"><b>${esc(g.title)}</b><span class="muted small">${esc(g.blurb)}</span></div>
       </div>
       ${dots}
@@ -400,14 +406,30 @@ function viewJuegos() {
     ${rows.length ? `<div class="table-wrap"><table class="tbl board ${MAX_TRIES === 1 ? 'solo' : ''}"><thead><tr><th>#</th><th class="l">Jugador</th><th>${MAX_TRIES === 1 ? 'Resultado' : 'Mejor'}</th>${MAX_TRIES > 1 ? '<th>Total</th><th>Int.</th>' : ''}</tr></thead><tbody>
       ${rows.map((r, i) => `<tr class="${i === 0 ? 'top1' : ''} ${r.p.id === S.meId ? 'mine' : ''}"><td class="pos">${i + 1}</td>
         <td class="l"><div class="pl">${av(r.p)}<span class="who"><span class="n">${esc(r.p.name)}</span></span></div></td>
-        <td class="pts">${r.best}<small>/5</small></td>${MAX_TRIES > 1 ? `<td>${r.total}</td><td>${r.tries}/${MAX_TRIES}</td>` : ''}</tr>`).join('')}</tbody></table></div>
-      ${MAX_TRIES > 1 ? '<p class="legend">Mejor: puntos del mejor intento (de 5). Total: puntos sumando todos tus intentos. Int.: intentos usados.</p>' : '<p class="legend">Resultado: puntos del único intento de la semana (de 5).</p>'}`
+        <td class="pts">${r.best}<small>/${g.max}</small></td>${MAX_TRIES > 1 ? `<td>${r.total}</td><td>${r.tries}/${MAX_TRIES}</td>` : ''}</tr>`).join('')}</tbody></table></div>
+      ${MAX_TRIES > 1 ? '<p class="legend">Mejor: puntos del mejor intento (de ${g.max}). Total: puntos sumando todos tus intentos. Int.: intentos usados.</p>' : '<p class="legend">Resultado: puntos del único intento de la semana (de ${g.max}).</p>'}`
       : '<div class="empty">Todavía nadie jugó esta semana. ¡Sé el primero!</div>'}`;
+}
+
+function mountQuiz(g) {
+  const practice = S.playId === 'practice';
+  window.YastonQuiz?.mount($('#game-root'), {
+    title: g.title, practice,
+    loadQuestions: () => must(db.rpc('quiz_questions_get', { p_game: g.id })),
+    submit: async answers => {
+      const pid = S.playId; if (!practice) S.playId = null;
+      const r = await must(db.rpc('quiz_finish', { p_game: g.id, p_play: practice ? null : pid, p_answers: answers }));
+      if (!practice) await loadGameData();
+      return Array.isArray(r) ? r[0] : r;
+    },
+    onExit: () => { S.game = null; S.playId = null; render(); scrollTo(0, 0); },
+  });
 }
 
 function mountGame() {
   const g = currentGame();
   if (S.tab !== 'juegos' || S.game !== g.id || !S.playId || !$('#game-root')) return;
+  if (g.quiz) { mountQuiz(g); return; }
   const mods = { penales: window.YastonPenales, adivina: window.YastonAdivina }, mod = mods[g.id];
   if (!mod) return;
   const gure = S.players.find(p => !p.guest && p.name.trim().toLowerCase() === 'gure');
@@ -1133,7 +1155,12 @@ const actions = {
   sort: el => { S.sort = el.dataset.s; render(); },
   game: () => { S.game = null; S.playId = null; render(); scrollTo(0, 0); },
   play: async () => {
-    try { S.playId = await must(db.rpc('start_play', { p_game: currentGame().id })); S.game = currentGame().id; await loadGameData(); render(); scrollTo(0, 0); }
+    try {
+      const g = currentGame();
+      if (g.quiz && S.quiz && S.meId && S.quiz.subject_id === S.meId) S.playId = 'practice'; // el dueño del juego solo prueba
+      else S.playId = (await must(db.rpc('start_play', { p_game: g.id }))) || 'practice';
+      S.game = g.id; if (S.playId !== 'practice') await loadGameData(); render(); scrollTo(0, 0);
+    }
     catch (e) { S.playId = null; toast(e.message, true); refresh(); }
   },
   tab: el => { S.tab = el.dataset.tab; S.game = null; S.playId = null; render(); scrollTo(0, 0); },

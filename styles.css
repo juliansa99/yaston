@@ -452,3 +452,25 @@ nav.tabs button { font-size: .7rem; }
 .aq-opt.right { opacity: 1; border-color: #fff; box-shadow: 0 0 0 3px var(--win); }
 .aq-opt.wrong { opacity: 1; border-color: var(--loss); background: #5a2a2a; color: #fff; }
 .aq-reveal { max-width: 460px; margin: 0 auto 10px; min-height: 1.4em; text-align: center; font-size: .95rem; }
+
+/* ---------- cuestionario ---------- */
+.fq { max-width: 520px; margin: 0 auto; }
+.fq-bar { height: 6px; border-radius: 99px; background: rgba(255,255,255,.12); overflow: hidden; margin-bottom: 14px; }
+.fq-bar i { display: block; height: 100%; background: var(--accent); transition: width .3s; }
+.fq-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
+.fq-num { font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color: var(--accent); font-weight: 700; }
+.fq-card h3 { margin: 6px 0 14px; font-size: 1.3rem; line-height: 1.25; text-wrap: balance; }
+.fq-opts { display: flex; flex-direction: column; gap: 10px; }
+.fq-opt { display: flex; align-items: center; gap: 12px; text-align: left; width: 100%; background: var(--card2); border: 2px solid transparent; border-radius: 12px; padding: 13px 14px; font-size: 1.05rem; font-weight: 600; }
+.fq-opt:active { transform: scale(.99); }
+.fq-opt.sel { border-color: var(--accent); background: rgba(255,210,63,.18); }
+.fq-l { flex: none; width: 30px; height: 30px; border-radius: 50%; background: rgba(0,0,0,.3); display: inline-flex; align-items: center; justify-content: center; font-weight: 800; color: var(--accent); }
+.fq-final { text-align: center; background: var(--card); border: 1px solid var(--accent); border-radius: var(--radius); padding: 18px; display: flex; flex-direction: column; gap: 8px; align-items: center; margin-bottom: 12px; }
+.fq-final b { font-size: 2rem; color: var(--accent); }
+.fq-final small { color: var(--mut); }
+.fq-review { display: flex; flex-direction: column; gap: 8px; }
+.fq-rev { padding: 10px 12px; border-radius: 10px; background: rgba(255,255,255,.05); border-left: 4px solid var(--line); }
+.fq-rev.ok { border-left-color: var(--win); }
+.fq-rev.bad { border-left-color: var(--loss); }
+.fq-rq { font-weight: 700; margin-bottom: 4px; }
+.fq-actions { display: flex; gap: 10px; justify-content: center; margin-top: 14px; }

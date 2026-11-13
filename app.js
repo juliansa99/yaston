@@ -413,14 +413,18 @@ function viewJuegos() {
 
 function mountQuiz(g) {
   const practice = S.playId === 'practice';
+  const row = r => (Array.isArray(r) ? r[0] : r);
   window.YastonQuiz?.mount($('#game-root'), {
     title: g.title, practice,
     loadQuestions: () => must(db.rpc('quiz_questions_get', { p_game: g.id })),
-    submit: async answers => {
-      const pid = S.playId; if (!practice) S.playId = null;
-      const r = await must(db.rpc('quiz_finish', { p_game: g.id, p_play: practice ? null : pid, p_answers: answers }));
-      if (!practice) await loadGameData();
-      return Array.isArray(r) ? r[0] : r;
+    // cada pregunta se responde una vez; la base devuelve si estuvo bien y cuál era la correcta
+    answer: async (n, choice) => row(await must(db.rpc('quiz_answer', { p_game: g.id, p_play: practice ? null : S.playId, p_n: n, p_choice: choice }))),
+    finish: async () => {
+      if (practice) return null;
+      const pid = S.playId; S.playId = null;
+      const r = row(await must(db.rpc('quiz_finish', { p_game: g.id, p_play: pid })));
+      await loadGameData();
+      return r;
     },
     onExit: () => { S.game = null; S.playId = null; render(); scrollTo(0, 0); },
   });

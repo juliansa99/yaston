@@ -464,6 +464,11 @@ nav.tabs button { font-size: .7rem; }
 .fq-opt { display: flex; align-items: center; gap: 12px; text-align: left; width: 100%; background: var(--card2); border: 2px solid transparent; border-radius: 12px; padding: 13px 14px; font-size: 1.05rem; font-weight: 600; }
 .fq-opt:active { transform: scale(.99); }
 .fq-opt.sel { border-color: var(--accent); background: rgba(255,210,63,.18); }
+.fq-opt:disabled { opacity: 1; }
+.fq-opt.right { border-color: var(--win); background: #1f6b45; }
+.fq-opt.wrong { border-color: var(--loss); background: #6b2a30; }
+.fq-opt.right .fq-l { background: var(--win); color: #06281a; }
+.fq-opt.wrong .fq-l { background: var(--loss); color: #3a0a0a; }
 .fq-l { flex: none; width: 30px; height: 30px; border-radius: 50%; background: rgba(0,0,0,.3); display: inline-flex; align-items: center; justify-content: center; font-weight: 800; color: var(--accent); }
 .fq-final { text-align: center; background: var(--card); border: 1px solid var(--accent); border-radius: var(--radius); padding: 18px; display: flex; flex-direction: column; gap: 8px; align-items: center; margin-bottom: 12px; }
 .fq-final b { font-size: 2rem; color: var(--accent); }
@@ -474,3 +479,9 @@ nav.tabs button { font-size: .7rem; }
 .fq-rev.bad { border-left-color: var(--loss); }
 .fq-rq { font-weight: 700; margin-bottom: 4px; }
 .fq-actions { display: flex; gap: 10px; justify-content: center; margin-top: 14px; }
+
+.fq-tally { display: flex; gap: 14px; justify-content: center; margin: -4px 0 12px; font-weight: 700; font-size: .95rem; }
+.fq-tally .ok, .fq-fb .ok { color: var(--win); }
+.fq-tally .bad, .fq-fb .bad { color: var(--loss); }
+.fq-fb { min-height: 1.4em; margin-top: 12px; font-weight: 700; font-size: 1.05rem; text-align: center; }
+.fq-next { margin-top: 12px; display: flex; justify-content: center; }

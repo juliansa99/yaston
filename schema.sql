@@ -310,28 +310,48 @@ language sql stable security definer set search_path = public as $fn$
   select q.n, q.question, q.options from public.quiz_questions q where q.game = p_game order by q.n
 $fn$;
 
-create or replace function public.quiz_finish(p_game text, p_play uuid, p_answers int[]) returns table (score int, correct int[])
+-- Cada pregunta se responde UNA vez; recién ahí la base dice cuál era la correcta.
+create table if not exists public.quiz_answers (
+  play_id uuid not null references public.game_plays(id) on delete cascade,
+  n int not null, choice int not null, correct boolean not null,
+  primary key (play_id, n)
+);
+alter table public.quiz_answers enable row level security;   -- sin políticas: solo por funciones
+
+drop function if exists public.quiz_finish(text, uuid, int[]);
+
+create or replace function public.quiz_answer(p_game text, p_play uuid, p_n int, p_choice int)
+returns table (is_correct boolean, correct_idx int)
 language plpgsql security definer set search_path = public as $fn$
-declare
-  me uuid := public.my_player_id();
-  subj uuid; corr int[]; sc int := 0; i int;
+declare me uuid := public.my_player_id(); subj uuid; ans int;
 begin
   if auth.uid() is null then raise exception 'Tenés que entrar con Google'; end if;
+  select a.answer into ans from public.quiz_questions a where a.game = p_game and a.n = p_n;
+  if ans is null then raise exception 'Esa pregunta no existe'; end if;
   select c.subject_id into subj from public.quiz_config c where c.game = p_game;
-  select array_agg(q.answer order by q.n) into corr from public.quiz_questions q where q.game = p_game;
-  if corr is null then raise exception 'Este juego todavía no está cargado'; end if;
-  for i in 1 .. array_length(corr, 1) loop
-    if p_answers[i] is not distinct from corr[i] then sc := sc + 1; end if;
-  end loop;
-  if me is not null and me = subj then            -- el dueño del cuestionario solo prueba: no suma puntos
-    return query select sc, corr;
+  if me is not null and me = subj then            -- el dueño solo prueba: no se guarda nada
+    return query select (p_choice = ans), ans;
     return;
   end if;
-  if p_play is null then raise exception 'Intento inválido'; end if;
-  update public.game_plays set goals = sc, finished_at = now()
-   where id = p_play and user_id = auth.uid() and game = p_game and goals is null;
+  if not exists (select 1 from public.game_plays g where g.id = p_play and g.user_id = auth.uid() and g.game = p_game and g.goals is null) then
+    raise exception 'Intento inválido o ya terminado';
+  end if;
+  insert into public.quiz_answers (play_id, n, choice, correct) values (p_play, p_n, p_choice, p_choice = ans) on conflict do nothing;
+  if not found then raise exception 'Esa pregunta ya fue respondida'; end if;
+  return query select (p_choice = ans), ans;
+end
+$fn$;
+
+create or replace function public.quiz_finish(p_game text, p_play uuid) returns table (score int)
+language plpgsql security definer set search_path = public as $fn$
+declare sc int;
+begin
+  if auth.uid() is null then raise exception 'Tenés que entrar con Google'; end if;
+  select count(*)::int into sc from public.quiz_answers a where a.play_id = p_play and a.correct;
+  update public.game_plays g set goals = sc, finished_at = now()
+   where g.id = p_play and g.user_id = auth.uid() and g.game = p_game and g.goals is null;
   if not found then raise exception 'Ese intento no es válido o ya terminó'; end if;
-  return query select sc, null::int[];             -- a los demás no se les muestran las correctas
+  return query select sc;
 end
 $fn$;
 
@@ -353,6 +373,6 @@ begin
 end
 $fn$;
 
-revoke all on function public.quiz_info(text), public.quiz_questions_get(text), public.quiz_finish(text, uuid, int[]), public.start_play(text) from public, anon;
+revoke all on function public.quiz_info(text), public.quiz_questions_get(text), public.quiz_answer(text, uuid, int, int), public.quiz_finish(text, uuid), public.start_play(text) from public, anon;
 grant execute on function public.quiz_info(text) to anon, authenticated;
-grant execute on function public.quiz_questions_get(text), public.quiz_finish(text, uuid, int[]), public.start_play(text) to authenticated;
+grant execute on function public.quiz_questions_get(text), public.quiz_answer(text, uuid, int, int), public.quiz_finish(text, uuid), public.start_play(text) to authenticated;

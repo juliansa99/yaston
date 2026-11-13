@@ -46,7 +46,7 @@ const db = supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
 const S = {
   user: null, isAdmin: false, meId: null, tab: 'tabla', game: null, torneo: null, sort: 'pts',
   sims: {}, prev: null, perfilId: null, prevTab: null, raceSel: null, raceMode: 'pts', week: null, board: [], plays: [], playId: null,
-  players: [], emails: {}, matches: [], mp: [], mvp: [], totals: {}, myVotes: {}, unclaimed: [],
+  players: [], emails: {}, matches: [], mp: [], unclaimed: [],
 };
 
 /* ---------------- utilidades ---------------- */
@@ -79,14 +79,11 @@ async function loadAll() {
     must(db.from('players').select('*').order('name')),
     must(db.from('matches').select('*').order('played_on', { ascending: false })),
     must(db.from('match_players').select('*')),
-    must(db.rpc('mvp_counts')),
-    must(db.rpc('vote_totals')),
-    S.user ? must(db.from('votes').select('match_id,voted_for')) : [],
     S.user ? must(db.rpc('my_player_id')) : null,
   ];
   if (S.isAdmin) jobs.push(must(db.from('player_emails').select('*')));
-  const [players, matches, mp, mvp, totals, votes, meId, emails] = await Promise.all(jobs);
-  S.players = players; S.matches = matches; S.mp = mp; S.mvp = mvp; S.meId = meId;
+  const [players, matches, mp, meId, emails] = await Promise.all(jobs);
+  S.players = players; S.matches = matches; S.mp = mp; S.meId = meId;
   if (S.isAdmin) { // invitados que quedaron sin ningún partido: se limpian solos
     const orphans = players.filter(p => p.guest && !mp.some(x => x.player_id === p.id));
     if (orphans.length) {
@@ -94,8 +91,6 @@ async function loadAll() {
       S.players = players.filter(p => !orphans.includes(p));
     }
   }
-  S.totals = Object.fromEntries(totals.map(t => [t.match_id, t.total]));
-  S.myVotes = Object.fromEntries(votes.map(v => [v.match_id, v.voted_for]));
   S.emails = emails ? Object.fromEntries(emails.map(e => [e.player_id, e.email])) : {};
   S.unclaimed = S.user && !meId ? await must(db.rpc('unclaimed_players')) : [];
   await loadGameData();
@@ -142,13 +137,8 @@ async function refresh() {
 }
 
 /* ---------------- cálculo de la tabla ---------------- */
-function mvpWinners(matchId) {
-  const rows = S.mvp.filter(r => r.match_id === matchId).sort((a, b) => b.votes - a.votes);
-  if (!rows.length) return { winners: [], rows };
-  return { winners: rows.filter(r => r.votes === rows[0].votes), rows };
-}
 function standings(t) { // t = torneo (rango de fechas y puntaje); null = todos los partidos cargados
-  const rows = new Map(S.players.map(p => [p.id, { p, pj: 0, g: 0, e: 0, pe: 0, pts: 0, mvp: 0 }]));
+  const rows = new Map(S.players.map(p => [p.id, { p, pj: 0, g: 0, e: 0, pe: 0, pts: 0 }]));
   const inT = m => !t || (m.played_on >= t.from && m.played_on <= t.to);
   const rules = t?.rules || PTS;
   for (const m of S.matches) {
@@ -160,13 +150,12 @@ function standings(t) { // t = torneo (rango de fechas y puntaje); null = todos 
       else if (m.result === x.team) { r.g++; r.pts += rules.W; }
       else { r.pe++; r.pts += rules.L; }
     }
-    if (!m.voting_open) for (const w of mvpWinners(m.id).winners) { const r = rows.get(w.player_id); if (r) r.mvp++; }
   }
   const H = history();
   const all = [...rows.values()];
   for (const r of all) r.st = streaks(H.get(r.p.id) || []);
   for (const r of all) r.pct = r.pj ? r.g / r.pj : null;
-  const byPts = (a, b) => b.pts - a.pts || b.g - a.g || b.mvp - a.mvp || a.pe - b.pe || a.p.name.localeCompare(b.p.name);
+  const byPts = (a, b) => b.pts - a.pts || b.g - a.g || a.pe - b.pe || a.p.name.localeCompare(b.p.name);
   let played = all.filter(r => r.pj > 0).sort(byPts);
   if (S.sort === 'avg') { // por promedio de victorias: primero los que jugaron al menos MIN partidos
     const enough = played.filter(r => r.pj >= MIN).sort((a, b) => b.pct - a.pct || b.pj - a.pj || byPts(a, b));
@@ -224,11 +213,6 @@ function pairStats() {
   }
   return [...P.values()];
 }
-function mvpEvents() { // una entrada por jugador del partido en cada votación cerrada
-  const ev = [];
-  for (const m of S.matches) if (!m.voting_open) for (const w of mvpWinners(m.id).winners) ev.push({ pid: w.player_id, date: m.played_on });
-  return ev;
-}
 const top = (arr, val) => {
   const c = arr.map(x => [x, val(x)]).filter(([, v]) => v != null && !Number.isNaN(v));
   if (!c.length) return [];
@@ -245,47 +229,34 @@ function award(icon, title, sub, items) {
 }
 
 function viewPremios() {
-  const H = history(), ev = mvpEvents();
+  const H = history();
   const rows = S.players.map(p => {
     const l = H.get(p.id);
     const g = l.filter(x => x.out === 'W').length, pe = l.filter(x => x.out === 'L').length;
-    return { p, pj: l.length, g, e: l.length - g - pe, pe, st: streaks(l), mvp: ev.filter(x => x.pid === p.id).length };
+    return { p, pj: l.length, g, e: l.length - g - pe, pe, st: streaks(l) };
   });
   const one = (r, text) => ({ ps: [r.p], text });
   const victorioso = top(rows, r => r.g || null).map(r => one(r, `${r.g} partidos ganados`));
   const promedio = top(rows, r => r.pj >= MIN ? r.g / r.pj + r.pj / 1e6 : null).map(r => one(r, `${pct(r.g, r.pj)} de victorias en ${r.pj} partidos`));
   const derrotado = top(rows, r => r.pj >= MIN && r.pe ? r.pe / r.pj + r.pj / 1e6 : null).map(r => one(r, `${pct(r.pe, r.pj)} de derrotas en ${r.pj} partidos`));
   const fantasmas = rows.filter(r => r.pj === 0 && !r.p.guest).map(r => one(r, 'Todavía no jugó ningún partido'));
-  // jugador del mes: el que más veces ganó la estrella (mes actual, o el último con estrellas)
-  const months = [...new Set(ev.map(x => x.date.slice(0, 7)))].sort();
-  const nowKey = new Date().toISOString().slice(0, 7);
-  const mk = months.includes(nowKey) ? nowKey : months[months.length - 1];
-  const mLabel = mk ? new Date(mk + '-15T12:00:00').toLocaleDateString('es-AR', { month: 'long', year: 'numeric' }) : '';
-  const inMonth = ev.filter(x => x.date.startsWith(mk || '~'));
-  const delMes = top(rows, r => inMonth.filter(x => x.pid === r.p.id).length || null).map(r => one(r, `${inMonth.filter(x => x.pid === r.p.id).length} ⭐ en ${mLabel}`));
   const bestW = top(rows, r => r.st.bw || null).map(r => one(r, `${r.st.bw} victorias seguidas`));
   const worstL = top(rows, r => r.st.bl || null).map(r => one(r, `${r.st.bl} derrotas seguidas`));
   const pairs = pairStats().filter(x => x.n >= MIN);
   const pairItem = x => ({ ps: x.ids.map(player).filter(Boolean), text: `ganaron ${x.w} de ${x.n} juntos (${pct(x.w, x.n)})` });
   const letal = top(pairs, x => x.w / x.n + x.n / 1e6).map(pairItem);
   const maldita = top(pairs, x => -(x.w / x.n) + x.n / 1e6).map(pairItem);
-  const stars = rows.filter(r => r.mvp).sort((a, b) => b.mvp - a.mvp || a.p.name.localeCompare(b.p.name));
   return `<div class="section-title"><h2>Premios</h2></div>
     <div class="awards">
       ${award('🏆', 'Más victorioso', 'El que más partidos ganó', victorioso)}
       ${award('📈', 'Mejor promedio', `Más % de victorias (mínimo ${MIN} partidos)`, promedio)}
       ${award('🤕', 'Derrotado', `Más % de derrotas (mínimo ${MIN} partidos)`, derrotado)}
       ${award('👻', 'Fantasma', 'El que no viene nunca', fantasmas)}
-      ${award('⭐', 'Jugador del mes', mk ? mLabel : 'El que más veces ganó la estrella', delMes)}
       ${award('🔥', 'Mejor racha', 'Más victorias seguidas de la historia', bestW)}
       ${award('🥶', 'Peor racha', 'Más derrotas seguidas de la historia', worstL)}
       ${award('🤝', 'Dupla letal', `Mejor % de victorias juntos (mínimo ${MIN} partidos)`, letal)}
       ${award('💀', 'Dupla maldita', `Peor % de victorias juntos (mínimo ${MIN} partidos)`, maldita)}
-    </div>
-    <div class="section-title"><h2>Ranking de estrellas ⭐</h2></div>
-    ${stars.length ? `<div class="table-wrap"><table class="tbl stars"><tbody>${stars.map((r, i) => `<tr class="${i === 0 ? 'top1' : ''}"><td class="pos">${i + 1}</td>
-      <td class="l"><div class="pl">${av(r.p)}<span class="n">${esc(r.p.name)}</span></div></td><td class="pts">⭐ ${r.mvp}</td></tr>`).join('')}</tbody></table></div>`
-      : '<div class="empty">Todavía no se cerró ninguna votación.</div>'}`;
+    </div>`;
 }
 
 function duoNemesis(id) {
@@ -304,7 +275,7 @@ function viewPerfil() {
   if (!p) return back + '<div class="empty">No encontré a ese jugador.</div>';
   const H = history(), l = H.get(id) || [];
   const g = l.filter(x => x.out === 'W').length, pe = l.filter(x => x.out === 'L').length, e = l.length - g - pe;
-  const st = streaks(l), stars = mvpEvents().filter(x => x.pid === id).length;
+  const st = streaks(l);
   const { dupla, bestia } = duoNemesis(id);
   const curr = st.cw >= 1 ? `🔥 ${st.cw} ganado${st.cw > 1 ? 's' : ''} seguido${st.cw > 1 ? 's' : ''}` : st.cl >= 1 ? `🥶 ${st.cl} perdido${st.cl > 1 ? 's' : ''} seguido${st.cl > 1 ? 's' : ''}` : '–';
   const tv = TORNEOS.find(x => x.kind === 'vivo'), sv = standings(tv);
@@ -315,9 +286,8 @@ function viewPerfil() {
   const others = S.players.filter(q => q.id !== id && !q.guest);
   const chip = { W: ['G', 'w'], D: ['E', 'd'], L: ['P', 'l'] };
   const line = [...l].reverse().slice(0, 20).map(x => {
-    const star = !x.m.voting_open && mvpWinners(x.m.id).winners.some(w => w.player_id === id);
     return `<div class="tl"><span class="tl-date">${new Date(x.m.played_on + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })}</span>
-      <span class="tl-chip ${chip[x.out][1]}">${chip[x.out][0]}</span><span class="tl-txt">Equipo ${x.team}${star ? ' · ⭐ jugador del partido' : ''}</span></div>`;
+      <span class="tl-chip ${chip[x.out][1]}">${chip[x.out][0]}</span><span class="tl-txt">Equipo ${x.team}</span></div>`;
   }).join('');
   return back + `
     <div class="card perfil-head">${av(p, 'xl')}
@@ -326,7 +296,7 @@ function viewPerfil() {
     <div class="statrow">
       <div><b>${l.length}</b><span>jugados</span></div><div><b>${g}</b><span>ganados</span></div>
       <div><b>${e}</b><span>empates</span></div><div><b>${pe}</b><span>perdidos</span></div>
-      <div><b>${pct(g, l.length)}</b><span>victorias</span></div><div><b>${stars}</b><span>⭐</span></div></div>
+      <div><b>${pct(g, l.length)}</b><span>victorias</span></div></div>
     <div class="card">
       <div class="kv"><span>🏆 ${esc(tv.name)}</span><b>${rowV ? `${posV + 1}º · ${rowV.pts} pts (${rowV.pj} PJ)` : 'todavía no jugó'}</b></div>
       <div class="kv"><span>🏆 Apertura 2026</span><b>${ap ? `${ap.pos}º · ${num(ap.pts)} pts (${ap.asist} asist.)` : 'sin datos'}</b></div>
@@ -370,7 +340,7 @@ function render() {
       ${S.user ? `<div class="me" data-act="${S.meId ? 'perfil' : 'claim'}" data-id="${S.meId || ''}" title="${S.meId ? 'Mi perfil' : 'Elegir quién sos'}">${avatar}<span>${esc(name.split(' ')[0])}</span><button data-act="logout">Salir</button></div>`
         : '<button class="btn sm primary" data-act="login">Entrar con Google</button>'}
     </header>
-    <main class="wrap">${S.tab === 'tabla' ? lastMatchCard() + gameNews() : ''}${S.tab === 'tabla' || S.tab === 'partidos' ? gameBanner() : ''}${S.tab === 'perfil' ? viewPerfil() : S.tab === 'tabla' ? viewTabla() : S.tab === 'premios' ? viewPremios() : S.tab === 'juegos' ? viewJuegos() : S.tab === 'partidos' ? viewPartidos() : viewPlantel()}</main>
+    <main class="wrap">${S.tab === 'tabla' ? gameNews() : ''}${S.tab === 'tabla' || S.tab === 'partidos' ? gameBanner() : ''}${S.tab === 'perfil' ? viewPerfil() : S.tab === 'tabla' ? viewTabla() : S.tab === 'premios' ? viewPremios() : S.tab === 'juegos' ? viewJuegos() : S.tab === 'partidos' ? viewPartidos() : viewPlantel()}</main>
     <nav class="tabs"><div class="in">
       ${[['tabla', '🏆', 'Tabla'], ['premios', '🏅', 'Premios'], ['partidos', '📅', 'Partidos'], ['plantel', '👥', 'Plantel'], ['juegos', '🎮', 'Juegos']]
         .map(([k, i, l]) => `<button data-act="tab" data-tab="${k}" class="${S.tab === k ? 'on' : ''}"><b>${i}</b>${l}</button>`).join('')}
@@ -413,7 +383,7 @@ function viewJuegos() {
     .sort((a, b) => b.best - a.best || b.total - a.total || a.tries - b.tries || a.p.name.localeCompare(b.p.name));
   return `<div class="section-title"><h2>Juegos</h2></div>
     ${!S.user ? `<div class="card notice"><b>🔒 Hay que entrar con Google</b>
-      <div class="muted small" style="margin:4px 0 10px">Para jugar y para votar al jugador del partido tenés que entrar con tu Gmail. Para ver la tabla no hace falta.</div>
+      <div class="muted small" style="margin:4px 0 10px">Para jugar tenés que entrar con tu Gmail. Para ver la tabla no hace falta.</div>
       <button class="btn google sm" data-act="login">Entrar con Google</button></div>` : ''}
     <div class="card weekly">
       <div class="eyebrow">Juego de la semana · ${weekLabel(S.week)}</div>
@@ -446,7 +416,6 @@ function mountGame() {
     name: gure?.name || 'Gure', photo: gure?.photo_url || null,
     matches: S.matches.filter(m => m.result && ['A', 'B'].every(t => S.mp.some(x => x.match_id === m.id && x.team === t))),
     pitch: (m, o) => pitchHtml(m, o), label: m => fmtDate(m.played_on),
-    figure: m => { if (m.voting_open) return ''; const w = mvpWinners(m.id).winners; return w.length ? w.map(x => player(x.player_id)?.name || '?').join(' y ') : ''; },
     tryLabel: () => MAX_TRIES === 1 ? 'Tu único intento de la semana' : `Intento ${S.plays.length} de ${MAX_TRIES}`,
     maxTries: MAX_TRIES,
     attemptsLeft: left,
@@ -521,11 +490,11 @@ function viewTabla() {
     const row = (r, i, dim) => `<tr class="${i === 0 && !dim ? 'top1' : ''} ${dim ? 'dim' : ''} ${few(r) ? 'few' : ''}">
       <td class="pos">${dim ? '–' : i + 1}</td>
       <td class="l"><div class="pl">${av(r.p)}<span class="who"><span class="n">${esc(r.p.name)}</span><span class="tags">${r.p.guest ? '<span class="badge">invitado</span>' : ''}${r.st.cw >= 3 ? `<span class="badge hot" title="Racha de victorias">🔥${r.st.cw}</span>` : r.st.cl >= 3 ? `<span class="badge cold" title="Racha de derrotas">🥶${r.st.cl}</span>` : ''}</span></span></div></td>
-      <td>${r.pj}</td><td>${r.g}</td><td>${r.e}</td><td>${r.pe}</td><td>${r.mvp ? '⭐' + r.mvp : '–'}</td><td class="avg">${r.pj ? Math.round(r.pct * 100) + '%' + (r.pj < MIN ? '*' : '') : '–'}</td><td class="pts">${r.pts}</td></tr>`;
+      <td>${r.pj}</td><td>${r.g}</td><td>${r.e}</td><td>${r.pe}</td><td class="avg">${r.pj ? Math.round(r.pct * 100) + '%' + (r.pj < MIN ? '*' : '') : '–'}</td><td class="pts">${r.pts}</td></tr>`;
     const played_n = S.matches.filter(m => m.result && m.played_on >= t.from && m.played_on <= t.to).length;
     body = !S.players.length ? '<div class="empty">Todavía no hay jugadores cargados.</div>' : `
     <div class="table-wrap"><table class="tbl">
-      <thead><tr><th>#</th><th class="l">Jugador</th><th>PJ</th><th>G</th><th>E</th><th>P</th><th>MVP</th>
+      <thead><tr><th>#</th><th class="l">Jugador</th><th>PJ</th><th>G</th><th>E</th><th>P</th>
         <th class="sortable ${S.sort === 'avg' ? 'on' : ''}" data-act="sort" data-s="avg" title="Ordenar por promedio de victorias">%${S.sort === 'avg' ? '▾' : ''}</th>
         <th class="sortable ${S.sort === 'pts' ? 'on' : ''}" data-act="sort" data-s="pts" title="Ordenar por puntos">Pts${S.sort === 'pts' ? '▾' : ''}</th></tr></thead>
       <tbody>${played.map((r, i) => row(r, i)).join('')}${never.map(r => row(r, 0, true)).join('')}</tbody>
@@ -533,7 +502,7 @@ function viewTabla() {
     <div class="rules">
       <span class="rule w">Ganado: <b>${t.rules.W} pts</b></span><span class="rule d">Empate: <b>${t.rules.D} pt</b></span><span class="rule l">Perdido: <b>${t.rules.L} pts</b></span>
     </div>
-    <p class="legend">PJ: jugados · G/E/P: ganados/empatados/perdidos · ⭐ veces elegido jugador del partido · %: promedio de victorias (ganados ÷ jugados). Tocá <b>%</b> o <b>Pts</b> arriba para ordenar la tabla por promedio o por puntos. Al ordenar por promedio solo entran los que jugaron al menos ${MIN} partidos; los demás van al final, con * en el %.
+    <p class="legend">PJ: jugados · G/E/P: ganados/empatados/perdidos · %: promedio de victorias (ganados ÷ jugados). Tocá <b>%</b> o <b>Pts</b> arriba para ordenar la tabla por promedio o por puntos. Al ordenar por promedio solo entran los que jugaron al menos ${MIN} partidos; los demás van al final, con * en el %.
     ${played_n} partido${played_n === 1 ? '' : 's'} jugado${played_n === 1 ? '' : 's'}.
     🔥 3 o más victorias seguidas · 🥶 3 o más derrotas seguidas. Los de abajo (en gris) son parte del grupo pero todavía no jugaron.</p>
     <div class="section-title"><h2>La carrera por el título</h2></div>${raceHtml(t)}
@@ -552,9 +521,8 @@ function viewTabla() {
 
 const FORMATIONS = { 1: [1], 2: [1, 1], 3: [1, 2], 4: [1, 1, 2], 5: [1, 2, 2], 6: [1, 2, 3], 7: [2, 2, 3] };
 function pitchHtml(m, o = {}) {
-  const { hide = false, swap = false, stat = false } = o; // hide: sin resultado ni estrellas; swap: equipos al revés; stat: fichas sin tocar
+  const { hide = false, swap = false, stat = false } = o; // hide: sin resultado; swap: equipos al revés; stat: fichas sin tocar
   const flip = t => swap ? (t === 'A' ? 'B' : 'A') : t;
-  const mvpIds = !hide && !m.voting_open ? mvpWinners(m.id).winners.map(w => w.player_id) : [];
   const toks = ['A', 'B'].map(t => {
     const ps = S.mp.filter(x => x.match_id === m.id && x.team === flip(t)).map(x => player(x.player_id)).filter(Boolean)
       .sort((a, b) => a.name.localeCompare(b.name));
@@ -564,7 +532,7 @@ function pitchHtml(m, o = {}) {
       const y = 8 + r * 15;
       for (let c = 0; c < cnt && k < ps.length; c++, k++) {
         const p = ps[k], x = (c + 1) / (cnt + 1) * 100;
-        const inner = `<span class="p-av">${av(p)}${mvpIds.includes(p.id) ? '<span class="p-star">⭐</span>' : ''}</span><span class="p-name">${esc(p.name)}</span>`;
+        const inner = `<span class="p-av">${av(p)}</span><span class="p-name">${esc(p.name)}</span>`;
         out.push(stat
           ? `<span class="p-tok ${t}" style="left:${x.toFixed(1)}%;top:${t === 'A' ? y : 100 - y}%">${inner}</span>`
           : `<button class="p-tok ${t}" style="left:${x.toFixed(1)}%;top:${t === 'A' ? y : 100 - y}%" data-act="perfil" data-id="${p.id}" title="${esc(p.name)}">${inner}</button>`);
@@ -578,32 +546,6 @@ function pitchHtml(m, o = {}) {
     ${toks}</div>`;
 }
 
-function mvpBox(m) {
-  const { winners, rows } = mvpWinners(m.id);
-  if (!winners.length) return `<div class="mvpbox"><h4>⭐ Jugador del partido</h4><span class="muted small">Votación cerrada sin votos.</span></div>`;
-  const rank = rows.map(r => `${esc(player(r.player_id)?.name || '?')} (${r.votes})`).join(' · ');
-  return `<div class="mvpbox"><h4>⭐ Jugador del partido</h4>
-    ${winners.map(w => `<div class="mvpwin">${av(player(w.player_id), 'lg')}<div>${esc(player(w.player_id)?.name || '?')}<div class="muted small">${w.votes} voto${w.votes === 1 ? '' : 's'}</div></div></div>`).join('')}
-    <div class="mvprank">${rank}</div></div>`;
-}
-
-function voteBox(m) {
-  const parts = S.mp.filter(x => x.match_id === m.id);
-  const total = S.totals[m.id] || 0;
-  const info = `<div class="muted small">${total}/${parts.length} ya votaron</div>`;
-  const mine = parts.find(x => x.player_id === S.meId);
-  if (!S.user) return `<div class="votebox"><h4>🗳️ Votación abierta</h4><div class="muted small">Para votar al jugador del partido tenés que entrar con Google.</div><div style="margin:10px 0"><button class="btn sm primary" data-act="login">Entrar con Google</button></div>${info}</div>`;
-  if (!S.meId) return `<div class="votebox"><h4>🗳️ Votación abierta</h4><div class="muted small">Todavía no elegiste quién sos.</div><div style="margin:10px 0"><button class="btn sm primary" data-act="claim">Elegir quién soy</button></div>${info}</div>`;
-  if (!mine) return `<div class="votebox"><h4>🗳️ Votación abierta</h4><div class="muted small">Solo votan los que jugaron este partido.</div>${info}</div>`;
-  const myVote = S.myVotes[m.id];
-  const opts = parts.filter(x => x.player_id !== S.meId).map(x => player(x.player_id)).filter(Boolean);
-  return `<div class="votebox"><h4>🗳️ ¿Quién fue el mejor del partido?</h4>
-    <div class="muted small">${myVote ? 'Ya votaste. Podés cambiar tu voto hasta que cierre la votación.' : 'Tocá a un jugador para votar. Tu voto es secreto.'}</div>
-    <div class="vgrid">${opts.map(p => `<button class="vopt ${myVote === p.id ? 'sel' : ''}" data-act="vote" data-m="${m.id}" data-p="${p.id}">${av(p)}<span>${esc(p.name)}</span></button>`).join('')}</div>
-    <div style="margin-top:8px">${info}</div></div>`;
-}
-
-
 /* ---------------- simulador de partido ---------------- */
 const SIM_RUNS = 10000;
 function rngFrom(str) { // número aleatorio con semilla: el mismo partido da siempre la misma simulación
@@ -613,19 +555,18 @@ function rngFrom(str) { // número aleatorio con semilla: el mismo partido da si
   return () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 }
 function simulate(m) {
-  const H = history(), ev = mvpEvents(), pairs = pairStats();
+  const H = history(), pairs = pairStats();
   const ids = { A: [], B: [] };
   for (const x of S.mp.filter(x => x.match_id === m.id)) ids[x.team].push(x.player_id);
   if (!ids.A.length || !ids.B.length) return null;
   const K = 4; // "partidos de prueba": a quien jugó poco se lo acerca a 50% en vez de creerle un 100% de un solo partido
   const info = id => {
     const l = H.get(id) || [], g = l.filter(x => x.out === 'W').length, e = l.filter(x => x.out === 'D').length;
-    const st = streaks(l), stars = ev.filter(x => x.pid === id).length;
+    const st = streaks(l);
     let s = (g + 0.5 * e + K * 0.5) / (l.length + K);
-    s += Math.min(0.06, (l.length ? stars / l.length : 0) * 0.1);
     if (st.cw >= 3) s += 0.02;
     if (st.cl >= 3) s -= 0.02;
-    return { id, p: player(id), pj: l.length, g, s, st, stars, pct: l.length ? g / l.length : null };
+    return { id, p: player(id), pj: l.length, g, s, st, pct: l.length ? g / l.length : null };
   };
   const build = key => {
     const ps = ids[key].map(info), set = new Set(ids[key]);
@@ -650,7 +591,7 @@ function simFacts(r) {
   const pct1 = x => x.pct == null ? 'debuta' : `${Math.round(x.pct * 100)}% de victorias`;
   for (const T of [r.A, r.B]) {
     const played = T.ps.filter(x => x.pj > 0).sort((a, b) => b.s - a.s);
-    if (played[0]) out.push(`⭐ La figura del Equipo ${T.key}: <b>${nm(played[0])}</b> (${pct1(played[0])}).`);
+    if (played[0]) out.push(`💪 El más ganador del Equipo ${T.key}: <b>${nm(played[0])}</b> (${pct1(played[0])}).`);
     const duo = [...T.duos].sort((a, b) => b.w / b.n - a.w / a.n || b.n - a.n)[0];
     if (duo) out.push(`🤝 En el Equipo ${T.key}, <b>${esc(duo.ids.map(i => player(i)?.name || '?').join(' y '))}</b> ganaron ${duo.w} de ${duo.n} juntos.`);
     for (const x of T.ps) {
@@ -680,7 +621,7 @@ function simBox(m) {
     <div class="simbar"><span class="a" style="flex:${Math.max(pa, 4)}">A ${pa}%</span><span class="d" style="flex:${Math.max(pd, 4)}">E ${pd}%</span><span class="b" style="flex:${Math.max(pb, 4)}">B ${pb}%</span></div>
     <p class="sim-head">${simHeadline(r)}</p>
     <ul class="sim-facts">${simFacts(r).map(x => `<li>${x}</li>`).join('')}</ul>
-    <small class="muted">Se simularon ${SIM_RUNS.toLocaleString('es-AR')} partidos con las victorias, estrellas, rachas y duplas de cada uno. Es solo un juego, no es oficial.</small></div>`;
+    <small class="muted">Se simularon ${SIM_RUNS.toLocaleString('es-AR')} partidos con las victorias, rachas y duplas de cada uno. Es solo un juego, no es oficial.</small></div>`;
 }
 
 /* ---------------- hora de Argentina y próximo partido (jueves de 19 a 20) ---------------- */
@@ -730,10 +671,6 @@ function chronicle(m) {
   let head = m.result === 'D'
     ? pickT(['Se repartieron los puntos: empate entre los dos equipos.', 'Terminó parejo: empate.', 'Nadie pudo sacar ventaja y el partido terminó empatado.'])
     : pickT([`Se quedó con el partido el Equipo ${m.result}.`, `Ganó el Equipo ${m.result}.`, `Fue para el Equipo ${m.result}.`]);
-  if (!m.voting_open) {
-    const w = mvpWinners(m.id).winners;
-    if (w.length) head += w.length === 1 ? ` La figura fue ${nm(w[0].player_id)}.` : ` Las figuras fueron ${list(w.map(x => nm(x.player_id)))}.`;
-  } else head += ' La votación a la figura sigue abierta.';
   const facts = [];
   for (const id of ids) {
     const out = m.result === 'D' ? 'D' : m.result === T[id] ? 'W' : 'L', b = before(id), sB = streaks(b), sA = streaks([...b, { out }]);
@@ -896,20 +833,18 @@ function wrappedData(id) {
   for (const x of l) { const k = x.m.played_on.slice(5, 7); byMonth[k] = (byMonth[k] || 0) + 1; }
   const topMonth = Object.entries(byMonth).sort((a, b) => b[1] - a[1])[0];
   const monthName = k => new Date(`${year}-${k}-15T12:00:00`).toLocaleDateString('es-AR', { month: 'long' });
-  const stars = mvpEvents().filter(x => x.pid === id && x.date.startsWith(year)).length;
   const { dupla, bestia } = duoNemesis(id);
   const tv = TORNEOS.find(x => x.kind === 'vivo'), sv = standings(tv);
   const posV = sv.played.findIndex(r => r.p.id === id), rowV = sv.played[posV];
   const att = total ? played / total : 0, pw = l.length ? g / l.length : 0;
   let nick, why;
-  if (stars >= 3) { nick = 'La Figura'; why = `fuiste el mejor del partido ${stars} veces`; }
-  else if (l.length >= 4 && pw >= 0.65) { nick = 'El Ganador'; why = `ganaste ${Math.round(pw * 100)}% de tus partidos`; }
+  if (l.length >= 4 && pw >= 0.65) { nick = 'El Ganador'; why = `ganaste ${Math.round(pw * 100)}% de tus partidos`; }
   else if (best.n >= 4) { nick = 'El Imparable'; why = `una racha de ${best.n} victorias seguidas`; }
   else if (att >= 0.8) { nick = 'El Infaltable'; why = `jugaste ${Math.round(att * 100)}% de los jueves`; }
   else if (l.length >= 4 && pw <= 0.25) { nick = 'El Valiente'; why = 'perdiste mucho y seguiste viniendo'; }
   else if (att > 0 && att <= 0.3) { nick = 'El Misterioso'; why = 'apareciste solo de vez en cuando'; }
   else { nick = 'El Regular'; why = 'sumaste partido tras partido'; }
-  return { year, p, l, g, e, pe, played, total, att, pw, best, worst, topMonth: topMonth && { name: monthName(topMonth[0]), n: topMonth[1] }, stars, dupla, bestia, ap, rowV, posV, tv, nick, why };
+  return { year, p, l, g, e, pe, played, total, att, pw, best, worst, topMonth: topMonth && { name: monthName(topMonth[0]), n: topMonth[1] }, dupla, bestia, ap, rowV, posV, tv, nick, why };
 }
 function wrappedSlides(d) {
   const n = esc(d.p.name), dt = x => new Date(x + 'T12:00:00').toLocaleDateString('es-AR', { day: 'numeric', month: 'numeric' });
@@ -919,7 +854,6 @@ function wrappedSlides(d) {
   if (d.l.length) S2.push({ bg: 'c', big: `${Math.round(d.pw * 100)}%`, title: 'de victorias', text: `En los partidos cargados en la página: ${d.g} ganado${d.g === 1 ? '' : 's'}, ${d.e} empate${d.e === 1 ? '' : 's'} y ${d.pe} perdido${d.pe === 1 ? '' : 's'}.` });
   if (d.best.n) S2.push({ bg: 'd', big: `${d.best.n} 🔥`, title: d.best.n === 1 ? 'victoria seguida' : 'victorias seguidas', text: `Tu mejor racha${d.best.from ? ` (del ${dt(d.best.from)} al ${dt(d.best.to)})` : ''}.${d.worst >= 2 ? ` Tu peor: ${d.worst} derrotas seguidas 🥶.` : ''}` });
   S2.push({ bg: 'e', big: '🤝', title: 'Tu dupla y tu bestia negra', text: `${d.dupla ? `Con ${esc(d.dupla.q.name)} ganaron ${d.dupla.w} de ${d.dupla.n} juntos. ` : 'Todavía no tenés una dupla con 3 partidos juntos. '}${d.bestia ? `Y ${esc(d.bestia.q.name)} te ganó ${d.bestia.w} de ${d.bestia.n} enfrentamientos.` : ''}` });
-  S2.push({ bg: 'f', big: `${d.stars} ⭐`, title: d.stars === 1 ? 'vez jugador del partido' : 'veces jugador del partido', text: d.stars ? 'Te eligieron como el mejor de la cancha.' : 'Todavía no fuiste la figura. Todavía.' });
   if (d.ap || d.rowV) S2.push({ bg: 'g', big: '🏆', title: 'Tus torneos', text: `${d.ap ? `Apertura 2026: ${d.ap.pos}º con ${num(d.ap.pts)} pts (asististe a ${d.ap.asist} partidos). ` : ''}${d.rowV ? `${d.tv.name}: vas ${d.posV + 1}º con ${d.rowV.pts} pts.` : ''}` });
   S2.push({ bg: 'h', big: `«${esc(d.nick)}»`, title: 'Tu apodo del año', text: `Porque ${esc(d.why)}.` });
   S2.push({ bg: 'a', big: '👏', title: 'Gracias por jugar', text: `Nos vemos el jueves, ${n}.`, last: true });
@@ -928,7 +862,7 @@ function wrappedSlides(d) {
 function wrappedText(d) {
   return [`🎁 Mi ${d.year} en Yaston`, `⚽ ${d.played} partidos${d.total ? ` (${Math.round(d.att * 100)}% de los jueves)` : ''}`,
     d.l.length ? `📈 ${Math.round(d.pw * 100)}% de victorias (${d.g}G ${d.e}E ${d.pe}P)` : '', d.best.n ? `🔥 Mejor racha: ${d.best.n} victorias seguidas` : '',
-    `⭐ ${d.stars} veces jugador del partido`, `🏷️ Mi apodo: ${d.nick}`].filter(Boolean).join('\n');
+    `🏷️ Mi apodo: ${d.nick}`].filter(Boolean).join('\n');
 }
 function wrappedStory(id) {
   const d = wrappedData(id); if (!d.p) return;
@@ -954,26 +888,6 @@ function wrappedStory(id) {
   draw();
 }
 
-/* ---------------- último partido: votar a la figura, bien a la vista ---------------- */
-function lastMatchCard() {
-  const done = S.matches.filter(m => m.result)
-    .sort((a, b) => b.played_on.localeCompare(a.played_on) || (b.created_at || '').localeCompare(a.created_at || ''));
-  const m = done[0]; if (!m) return '';
-  const parts = S.mp.filter(x => x.match_id === m.id); if (!parts.length) return '';
-  const days = (new Date(nowAR().iso + 'T12:00:00Z') - new Date(m.played_on + 'T12:00:00Z')) / 864e5;
-  if (!m.voting_open && days > 7) return ''; // la figura ya elegida se muestra una semana
-  const when = new Date(m.played_on + 'T12:00:00').toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' });
-  const pending = m.voting_open && parts.some(x => x.player_id === S.meId) && !S.myVotes[m.id];
-  return `<div class="lastmatch ${pending ? 'pending' : ''}">
-    <div class="eyebrow lm-when">Último partido · ${when}</div>
-    <h3>${m.result === 'D' ? 'El último partido terminó empatado' : `El último partido lo ganó el Equipo ${m.result} 🏆`}</h3>
-    ${m.voting_open ? `<p class="lm-cta">${pending ? '<b>¡Te falta votar!</b> ' : ''}Elegí quién fue la figura del partido.</p>${voteBox(m)}` : mvpBox(m)}
-    <div class="lm-foot">
-      <button class="link" data-act="tab" data-tab="partidos">Ver el partido completo ›</button>
-      ${S.isAdmin && m.voting_open ? `<button class="btn sm ghost" data-act="toggle-voting" data-id="${m.id}">🔒 Cerrar votación</button>` : ''}
-    </div></div>`;
-}
-
 function matchCard(m) {
   const res = m.result === 'A' ? 'Ganó el Equipo A' : m.result === 'B' ? 'Ganó el Equipo B' : m.result === 'D' ? 'Empate' : 'Sin resultado';
   const hasParts = S.mp.some(x => x.match_id === m.id);
@@ -982,10 +896,8 @@ function matchCard(m) {
     ${pitchHtml(m)}
     ${hasParts && !m.result ? simBox(m) : ''}
     ${hasParts && m.result ? chronicleBox(m) : ''}
-    ${hasParts ? (m.voting_open ? voteBox(m) : mvpBox(m)) : ''}
     ${S.isAdmin ? `<div class="admin-row">
       <button class="btn sm" data-act="edit-match" data-id="${m.id}">✏️ Editar</button>
-      ${hasParts ? `<button class="btn sm ghost" data-act="toggle-voting" data-id="${m.id}">${m.voting_open ? '🔒 Cerrar votación' : '🔓 Reabrir votación'}</button>` : ''}
       <button class="btn sm danger" data-act="del-match" data-id="${m.id}">Borrar</button></div>` : ''}
   </div>`;
 }
@@ -993,9 +905,6 @@ function matchCard(m) {
 function viewPartidos() {
   return `<div class="section-title"><h2>Partidos</h2>
       ${S.isAdmin ? '<button class="btn primary sm" data-act="new-match">+ Nuevo partido</button>' : ''}</div>
-    ${!S.user ? `<div class="card notice"><b>🔒 Para votar hay que entrar con Google</b>
-      <div class="muted small" style="margin:4px 0 10px">Para votar al jugador del partido tenés que entrar con tu Gmail. Mirar los partidos no hace falta.</div>
-      <button class="btn google sm" data-act="login">Entrar con Google</button></div>` : ''}
     ${S.matches.length ? S.matches.map(matchCard).join('') : `<div class="empty">Todavía no se cargó ningún partido.${S.isAdmin ? '<br>Tocá "+ Nuevo partido" para armar los equipos A y B.' : ''}</div>`}`;
 }
 
@@ -1004,12 +913,12 @@ function viewPlantel() {
   const all = standings(null), st = Object.fromEntries([...all.played, ...all.never].map(r => [r.p.id, r]));
   return `<div class="section-title"><h2>Plantel · ${roster.length}</h2>
       ${S.isAdmin ? '<button class="btn primary sm" data-act="new-player">+ Jugador</button>' : ''}</div>
-    ${S.user && !S.meId ? '<div class="card"><b>¿Quién sos?</b><div class="muted small" style="margin:4px 0 10px">Elegí tu nombre para poder votar.</div><button class="btn sm primary" data-act="claim">Elegir quién soy</button></div>' : ''}
+    ${S.user && !S.meId ? '<div class="card"><b>¿Quién sos?</b><div class="muted small" style="margin:4px 0 10px">Elegí tu nombre para poder jugar.</div><button class="btn sm primary" data-act="claim">Elegir quién soy</button></div>' : ''}
     ${roster.length ? `<div class="pgrid">${roster.map(p => {
       const r = st[p.id];
       return `<div class="pcard ${p.id === S.meId ? 'me-card' : ''}">${av(p, 'xl')}
         <div class="nm">${esc(p.name)}</div>
-        <div class="st">${r.pj} PJ · ${r.g} G · ${r.mvp ? '⭐' + r.mvp : '0 ⭐'}</div>
+        <div class="st">${r.pj} PJ · ${r.g} G</div>
         <div class="pbtns"><button class="btn sm" data-act="player-history" data-id="${p.id}">Historial</button>
         ${S.isAdmin ? `<button class="btn sm ghost" data-act="edit-player" data-id="${p.id}">Editar</button>` : ''}</div>
         ${S.isAdmin ? `<div class="mail">${esc(S.emails[p.id] || 'sin mail')}</div>` : ''}</div>`;
@@ -1035,7 +944,7 @@ function claimModal() {
   const opts = S.unclaimed.map(player).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name));
   let pick = null;
   openModal(`<h3>¿Quién sos?</h3>
-    <p class="muted small">Elegí tu nombre de la lista. Queda vinculado a <b>${esc(S.user.email)}</b> y con eso podés votar. Si te equivocás, avisale al admin.</p>
+    <p class="muted small">Elegí tu nombre de la lista. Queda vinculado a <b>${esc(S.user.email)}</b> y con eso podés jugar los juegos de la semana. Si te equivocás, avisale al admin.</p>
     ${opts.length ? `<div class="vgrid">${opts.map(p => `<button type="button" class="vopt" data-pick="${p.id}">${av(p)}<span>${esc(p.name)}</span></button>`).join('')}</div>`
       : '<div class="empty">Todos los jugadores de la lista ya fueron elegidos. Si no estás, avisale al admin.</div>'}
     <div class="err" id="cerr"></div>
@@ -1063,7 +972,7 @@ function playerModal(id) {
       <div class="field photo-pick"><div id="prev">${p ? av(p, 'xl') : '<span class="av xl">📷</span>'}</div>
         <div><input type="file" id="pfile" accept="image/*"><div class="hint">Foto cuadrada o de cara, se recorta sola.</div></div></div>
       <div class="field"><label>Nombre</label><input type="text" id="pname" required maxlength="40" value="${esc(p?.name || '')}"></div>
-      <div class="field"><label>Mail de Gmail (para que pueda entrar y votar)</label>
+      <div class="field"><label>Mail de Gmail (para que pueda entrar y jugar)</label>
         <input type="email" id="pmail" placeholder="opcional" value="${esc(S.emails[id] || '')}">
         <div class="hint">Tiene que ser el mismo mail con el que va a entrar con Google.</div></div>
       <div class="err" id="perr"></div>
@@ -1219,7 +1128,7 @@ function matchModal(id) {
 /* ---------------- acciones ---------------- */
 const actions = {
   login: () => db.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname } }),
-  logout: async () => { await db.auth.signOut(); S.user = null; S.isAdmin = false; S.meId = null; S.myVotes = {}; S.emails = {}; render(); },
+  logout: async () => { await db.auth.signOut(); S.user = null; S.isAdmin = false; S.meId = null; S.emails = {}; render(); },
   simulate: el => { const id = el.dataset.id; S.sims[id] = 'run'; render(); setTimeout(() => { S.sims[id] = 'done'; render(); }, 1700); },
   sort: el => { S.sort = el.dataset.s; render(); },
   game: () => { S.game = null; S.playId = null; render(); scrollTo(0, 0); },
@@ -1229,10 +1138,6 @@ const actions = {
   },
   tab: el => { S.tab = el.dataset.tab; S.game = null; S.playId = null; render(); scrollTo(0, 0); },
   torneo: el => { S.torneo = el.value; render(); },
-  vote: async el => {
-    try { await must(db.rpc('cast_vote', { p_match: el.dataset.m, p_for: el.dataset.p })); toast('Voto registrado 🗳️'); refresh(); }
-    catch (e) { toast(e.message, true); }
-  },
   claim: () => { try { sessionStorage.removeItem('yaston-skip-claim'); } catch { /* sin storage */ } claimModal(); },
   'player-history': el => actions.perfil(el),
   perfil: el => { if (S.tab !== 'perfil') S.prevTab = S.tab; S.tab = 'perfil'; S.perfilId = el.dataset.id || S.meId; S.game = null; S.playId = null; render(); scrollTo(0, 0); },
@@ -1243,13 +1148,8 @@ const actions = {
   'edit-player': el => playerModal(el.dataset.id),
   'new-match': () => matchModal(),
   'edit-match': el => matchModal(el.dataset.id),
-  'toggle-voting': async el => {
-    const m = S.matches.find(x => x.id === el.dataset.id);
-    try { await must(db.from('matches').update({ voting_open: !m.voting_open }).eq('id', m.id)); toast(m.voting_open ? 'Votación cerrada' : 'Votación reabierta'); refresh(); }
-    catch (e) { toast(e.message, true); }
-  },
   'del-match': async el => {
-    if (!confirm('¿Borrar este partido? Se pierden también sus votos.')) return;
+    if (!confirm('¿Borrar este partido?')) return;
     try { await must(db.from('matches').delete().eq('id', el.dataset.id)); toast('Partido borrado'); refresh(); }
     catch (e) { toast(e.message, true); }
   },

@@ -7,11 +7,11 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 
 function mount(root, opts) {
   root.innerHTML = '<div class="empty">Cargando las preguntas…</div>';
-  let qs = [], res = [], i = 0, busy = false;
+  let qs = [], res = [], i = 0, busy = false, resumed = false;
   const tally = () => ({ ok: res.filter(r => r?.ok).length, bad: res.filter(r => r && !r.ok).length });
 
   const head = (n, total) => `<div class="pen-head">
-      <div><b>${esc(opts.title)}</b><div class="muted small">${opts.practice ? 'Modo práctica: no suma puntos ni aparece en la tabla.' : 'Una pregunta por vez. Tenés un solo intento.'}</div></div>
+      <div><b>${esc(opts.title)}</b><div class="muted small">${opts.practice ? 'Modo práctica: no suma puntos ni aparece en la tabla.' : resumed ? 'Seguís donde habías quedado. Tus respuestas anteriores están guardadas.' : 'Una pregunta por vez. Tenés un solo intento.'}</div></div>
       <div class="pen-score"><b>${n}/${total}</b><span>pregunta</span></div></div>`;
   const tallyHtml = () => { const t = tally(); return `<div class="fq-tally"><span class="ok">✅ ${t.ok} bien</span><span class="bad">❌ ${t.bad} mal</span></div>`; };
 
@@ -80,6 +80,14 @@ function mount(root, opts) {
     try { qs = await opts.loadQuestions(); } catch (e) { root.innerHTML = `<div class="empty">No pude cargar las preguntas.<br><small>${esc(e.message || '')}</small></div>`; return; }
     if (!qs?.length) { root.innerHTML = '<div class="empty">Este juego todavía no tiene preguntas cargadas.</div>'; return; }
     qs = [...qs].sort((a, b) => a.n - b.n);
+    // si ya habías respondido algunas, se retoma desde la primera que falta
+    let prog = [];
+    if (opts.progress) { try { prog = (await opts.progress()) || []; } catch { prog = []; } }
+    prog.forEach(p => { const k = qs.findIndex(q => q.n === p.n); if (k >= 0) res[k] = { choice: p.choice, correct: p.correct_idx, ok: p.is_correct }; });
+    const next = qs.findIndex((q, k) => !res[k]);
+    resumed = prog.length > 0;
+    if (next === -1) { i = qs.length; finish(); return; }
+    i = next;
     question();
   })();
 }

@@ -254,6 +254,7 @@ language sql stable security definer set search_path = public as $fn$
   select g.player_id, max(coalesce(g.goals, 0))::int, sum(coalesce(g.goals, 0))::int, count(*)::int
   from public.game_plays g
   where g.game = p_game and g.week = public.current_week()
+    and (g.goals is not null or not exists (select 1 from public.quiz_config c where c.game = g.game))  -- cuestionario sin terminar: todavía no figura
   group by g.player_id
 $fn$;
 
@@ -268,6 +269,7 @@ language sql stable security definer set search_path = public as $fn$
   select g.player_id, max(coalesce(g.goals, 0))::int, sum(coalesce(g.goals, 0))::int, count(*)::int
   from public.game_plays g
   where g.game = p_game and g.week = p_week
+    and (g.goals is not null or not exists (select 1 from public.quiz_config c where c.game = g.game))  -- cuestionario sin terminar: todavía no figura
   group by g.player_id
 $fn$;
 revoke all on function public.game_board_week(text, date) from public, anon;
@@ -359,15 +361,17 @@ $fn$;
 
 create or replace function public.start_play(p_game text) returns uuid
 language plpgsql security definer set search_path = public as $fn$
-declare
-  me uuid := public.my_player_id();
-  wk date := public.current_week();
-  n int;
-  pid uuid;
+declare me uuid := public.my_player_id(); wk date := public.current_week(); n int; pid uuid;
 begin
   if auth.uid() is null then raise exception 'Tenés que entrar con Google para jugar'; end if;
   if me is null then raise exception 'Primero elegí quién sos (pestaña Plantel)'; end if;
   if exists (select 1 from public.quiz_config c where c.game = p_game and c.subject_id = me) then return null; end if;  -- el dueño no gasta intento
+  -- en los cuestionarios, un intento sin terminar se retoma donde quedó
+  if exists (select 1 from public.quiz_config c where c.game = p_game) then
+    select g.id into pid from public.game_plays g
+     where g.user_id = auth.uid() and g.game = p_game and g.week = wk and g.goals is null order by g.created_at limit 1;
+    if pid is not null then return pid; end if;
+  end if;
   select count(*) into n from public.game_plays where user_id = auth.uid() and game = p_game and week = wk;
   if n >= 1 then raise exception 'Ya usaste tu intento de esta semana'; end if;  -- intentos por cuenta y por semana
   insert into public.game_plays (game, week, user_id, player_id) values (p_game, wk, auth.uid(), me) returning id into pid;
@@ -375,6 +379,22 @@ begin
 end
 $fn$;
 
+-- Qué preguntas ya respondió el jugador en su intento (para retomar), con la correcta de cada una
+create or replace function public.quiz_progress(p_game text, p_play uuid)
+returns table (n int, choice int, is_correct boolean, correct_idx int)
+language plpgsql security definer set search_path = public as $fn$
+begin
+  if auth.uid() is null then raise exception 'Tenés que entrar con Google'; end if;
+  if not exists (select 1 from public.game_plays g where g.id = p_play and g.user_id = auth.uid() and g.game = p_game and g.goals is null) then
+    raise exception 'Intento inválido o ya terminado';
+  end if;
+  return query
+    select a.n, a.choice, a.correct, q.answer
+      from public.quiz_answers a join public.quiz_questions q on q.game = p_game and q.n = a.n
+     where a.play_id = p_play order by a.n;
+end
+$fn$;
+
 revoke all on function public.quiz_info(text), public.quiz_questions_get(text), public.quiz_answer(text, uuid, int, int), public.quiz_finish(text, uuid), public.start_play(text) from public, anon;
 grant execute on function public.quiz_info(text) to anon, authenticated;
-grant execute on function public.quiz_questions_get(text), public.quiz_answer(text, uuid, int, int), public.quiz_finish(text, uuid), public.start_play(text) to authenticated;
+grant execute on function public.quiz_questions_get(text), public.quiz_answer(text, uuid, int, int), public.quiz_finish(text, uuid), public.quiz_progress(text, uuid), public.start_play(text) to authenticated;

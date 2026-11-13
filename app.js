@@ -372,7 +372,8 @@ function viewJuegos() {
   if (S.game === g.id && S.playId) {
     return `<div class="section-title"><button class="btn sm ghost" data-act="game" data-g="">← Juegos</button></div><div id="game-root"></div>`;
   }
-  const used = S.plays.length, left = Math.max(0, MAX_TRIES - used);
+  const open = g.quiz ? S.plays.find(x => x.goals === null) : null; // cuestionario a medias: se retoma donde quedó
+  const used = g.quiz ? S.plays.filter(x => x.goals !== null).length : S.plays.length, left = open ? 1 : Math.max(0, MAX_TRIES - used);
   const best = S.plays.reduce((m, x) => Math.max(m, x.goals ?? 0), 0);
   const gure = S.players.find(p => !p.guest && p.name.trim().toLowerCase() === 'gure');
   const isSubject = !!(g.quiz && S.quiz && S.meId && S.quiz.subject_id === S.meId);
@@ -381,10 +382,11 @@ function viewJuegos() {
   else if (!S.meId) cta = '<button class="btn primary" data-act="claim">Elegí quién sos para jugar</button>';
   else if (g.quiz && !S.quiz) cta = '<span class="muted small">Este juego todavía no está listo. En un rato se habilita.</span>';
   else if (isSubject) cta = '<button class="btn primary" data-act="play">Probar el juego (no suma puntos)</button>';
+  else if (open) cta = '<button class="btn primary" data-act="play">Seguir donde quedé</button>';
   else if (!left) cta = `<span class="muted small">Ya usaste ${triesText(MAX_TRIES)}. Se renueva el viernes.</span>`;
   else cta = `<button class="btn primary" data-act="play">${used ? 'Jugar otra vez' : 'Jugar'}</button>`;
   const dots = isSubject ? '<div class="muted small">Este juego es sobre vos: podés probarlo para ver cómo queda, pero no suma puntos ni aparecés en la tabla.</div>' : S.user && S.meId ? `<div class="tries">${Array.from({ length: MAX_TRIES }, (_, k) => `<i class="${k < used ? 'used' : ''}"></i>`).join('')}
-      <span class="muted small">${left ? (MAX_TRIES === 1 ? '¡Tenés 1 solo intento!' : `Te quedan ${left} de ${MAX_TRIES} intentos`) : 'Sin intentos'}${used ? ` · ${MAX_TRIES === 1 ? 'tu resultado' : 'tu mejor'}: ${best} de ${g.max}` : ''}</span></div>` : '';
+      <span class="muted small">${open ? 'Tenés un intento a medias' : left ? (MAX_TRIES === 1 ? '¡Tenés 1 solo intento!' : `Te quedan ${left} de ${MAX_TRIES} intentos`) : 'Sin intentos'}${used ? ` · ${MAX_TRIES === 1 ? 'tu resultado' : 'tu mejor'}: ${best} de ${g.max}` : ''}</span></div>` : '';
   const rows = S.board.map(b => ({ ...b, p: player(b.player_id) })).filter(r => r.p)
     .sort((a, b) => b.best - a.best || b.total - a.total || a.tries - b.tries || a.p.name.localeCompare(b.p.name));
   return `<div class="section-title"><h2>Juegos</h2></div>
@@ -399,7 +401,7 @@ function viewJuegos() {
       </div>
       ${dots}
       <div class="weekly-cta">${cta}</div>
-      <p class="legend" style="margin:10px 0 0">Hay un juego nuevo cada viernes. ${MAX_TRIES === 1 ? 'Cada cuenta de Google juega <b>una sola vez</b>. El intento se usa apenas empezás: si cerrás la página a mitad, se pierde.' : `Cada cuenta de Google juega hasta ${MAX_TRIES} veces y en la tabla cuenta el mejor intento.`}</p>
+      <p class="legend" style="margin:10px 0 0">Hay un juego nuevo cada viernes. ${MAX_TRIES === 1 ? (g.quiz ? 'Cada cuenta de Google juega <b>una sola vez</b>. Podés salir y seguir después: tus respuestas quedan guardadas y retomás donde dejaste.' : 'Cada cuenta de Google juega <b>una sola vez</b>. El intento se usa apenas empezás: si cerrás la página a mitad, se pierde.') : `Cada cuenta de Google juega hasta ${MAX_TRIES} veces y en la tabla cuenta el mejor intento.`}</p>
     </div>
     ${prevWeekCard()}
     <div class="section-title"><h2>Tabla de la semana</h2></div>
@@ -417,6 +419,7 @@ function mountQuiz(g) {
   window.YastonQuiz?.mount($('#game-root'), {
     title: g.title, practice,
     loadQuestions: () => must(db.rpc('quiz_questions_get', { p_game: g.id })),
+    progress: async () => (practice ? [] : await must(db.rpc('quiz_progress', { p_game: g.id, p_play: S.playId }))), // respuestas ya dadas (para retomar)
     // cada pregunta se responde una vez; la base devuelve si estuvo bien y cuál era la correcta
     answer: async (n, choice) => row(await must(db.rpc('quiz_answer', { p_game: g.id, p_play: practice ? null : S.playId, p_n: n, p_choice: choice }))),
     finish: async () => {

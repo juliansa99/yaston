@@ -2,6 +2,17 @@
 <html lang="es">
 <head>
   <meta charset="utf-8">
+  <script>
+    // Si el login con Google se inició desde Yagui Geo (geo/) y volvió acá, lo reenvía al juego.
+    try {
+      var t = +localStorage.getItem('yagui-geo:login');
+      if (t) {
+        localStorage.removeItem('yagui-geo:login');
+        if (Date.now() - t < 6e5 && /(access_token|code|error)=/.test(location.search + location.hash))
+          location.replace('geo/' + location.search + location.hash);
+      }
+    } catch (e) {}
+  </script>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0b3d2e">
   <title>Yaston · Fútbol de los jueves</title>

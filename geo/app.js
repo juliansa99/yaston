@@ -311,6 +311,7 @@
   $('btnAuth').addEventListener('click', async () => {
     if (!sb) return;
     if (user) { await sb.auth.signOut(); return; }
+    try { localStorage.setItem('yagui-geo:login', Date.now()); } catch (e) {}
     const { error } = await sb.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: location.origin + location.pathname }
@@ -386,6 +387,7 @@
   }
 
   // ---------- Arranque ----------
+  try { localStorage.removeItem('yagui-geo:login'); } catch (e) {}
   if (isDone()) phase = 'done';
   resize();
   updateUI();

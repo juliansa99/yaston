@@ -36,9 +36,16 @@
   const places = dailyPlaces();
 
   // ---------- Estado ----------
-  const KEY = 'yagui-geo:' + day;
+  // La partida se guarda por cuenta, así dos personas en el mismo dispositivo no se mezclan.
+  let KEY = 'yagui-geo:' + day;
   let state = { results: [] }; // results[i] = {lat, lon, km, pts}
-  try { state = JSON.parse(localStorage.getItem(KEY)) || state; } catch (e) {}
+  function loadState(uid) {
+    KEY = 'yagui-geo:' + day + (uid ? ':' + uid : '');
+    state = { results: [] };
+    if (uid || !sb) { try { state = JSON.parse(localStorage.getItem(KEY)) || state; } catch (e) {} }
+    guess = null;
+    phase = isDone() ? 'done' : 'guess';
+  }
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} };
   const isDone = () => state.results.length >= places.length;
   const total = () => state.results.reduce((s, r, i) => s + r.pts * WEIGHTS[i], 0);
@@ -100,7 +107,6 @@
     const g = (moving && zoom < 4) || !geo.hi ? geo.lo : geo.hi;
     if (g) {
       ctx.beginPath(); path(g.land); ctx.fillStyle = '#eadfc6'; ctx.fill();
-      ctx.beginPath(); path(g.borders); ctx.strokeStyle = '#b3a17c'; ctx.lineWidth = 0.7; ctx.stroke();
     }
     ctx.beginPath(); path({ type: 'Sphere' }); ctx.strokeStyle = '#7fb4e055'; ctx.lineWidth = 1.5; ctx.stroke();
 
@@ -173,7 +179,7 @@
       cv.classList.remove('dragging');
       const tap = !multi && travel < 6 && e.type === 'pointerup';
       moving = false;
-      if (tap && phase === 'guess') {
+      if (tap && phase === 'guess' && !gated()) {
         const rect = cv.getBoundingClientRect();
         const x = e.clientX - rect.left, y = e.clientY - rect.top;
         if (Math.hypot(x - W / 2, y - H / 2) <= base * zoom) {
@@ -208,6 +214,15 @@
     const n = state.results.length;
     const btn = $('btnMain'), fb = $('feedback');
     $('bar').hidden = false;
+    if (gated()) {
+      $('prompt').hidden = true;
+      fb.hidden = false;
+      fb.textContent = 'Para jugar hay que entrar con Google: así tu puntaje suma en la tabla.';
+      btn.disabled = !authReady;
+      btn.textContent = authReady ? 'Entrar con Google' : 'Cargando…';
+      draw();
+      return;
+    }
     if (phase === 'done') {
       $('prompt').hidden = true; fb.hidden = true;
       btn.disabled = false; btn.textContent = 'Ver resultado';
@@ -236,6 +251,7 @@
   }
 
   $('btnMain').addEventListener('click', () => {
+    if (gated()) { login(); return; }
     if (phase === 'guess') {
       if (!guess) return;
       const p = places[state.results.length];
@@ -301,6 +317,8 @@
   const sb = cfg.supabaseUrl && cfg.supabaseAnonKey && window.supabase
     ? window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey) : null;
   let user = null;
+  let authReady = !sb;
+  const gated = () => !!sb && !user; // sin sesión no se juega
 
   function updateAuthUI() {
     const b = $('btnAuth');
@@ -311,13 +329,16 @@
   $('btnAuth').addEventListener('click', async () => {
     if (!sb) return;
     if (user) { await sb.auth.signOut(); return; }
+    login();
+  });
+  async function login() {
     try { localStorage.setItem('yagui-geo:login', Date.now()); } catch (e) {}
     const { error } = await sb.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: location.origin + location.pathname }
     });
     if (error) toast('No se pudo iniciar sesión');
-  });
+  }
 
   async function syncPlay() {
     if (!sb || !user) return;
@@ -388,7 +409,7 @@
 
   // ---------- Arranque ----------
   try { localStorage.removeItem('yagui-geo:login'); } catch (e) {}
-  if (isDone()) phase = 'done';
+  loadState();
   resize();
   updateUI();
   updateAuthUI();
@@ -396,8 +417,7 @@
 
   const load = (file, key) => d3.json(file).then(t => {
     geo[key] = {
-      land: topojson.feature(t, t.objects.land),
-      borders: topojson.mesh(t, t.objects.countries, (a, b) => a !== b)
+      land: topojson.feature(t, t.objects.land) // sin fronteras: solo la silueta de la tierra
     };
     draw();
   });
@@ -408,8 +428,15 @@
       const next = session ? session.user : null;
       const changed = (next && next.id) !== (user && user.id);
       user = next;
+      authReady = true;
       updateAuthUI();
-      if (changed && user) setTimeout(syncPlay, 0); // fuera del callback para no bloquear el cliente
+      if (changed) {
+        loadState(user && user.id);
+        if ($('endDlg').open) $('endDlg').close();
+        if (user && isDone()) showEnd();
+        if (user) setTimeout(syncPlay, 0); // fuera del callback para no bloquear el cliente
+      }
+      updateUI();
     });
   }
 })();

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0e1420">
+<title>Yagui Geo</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="globe" aria-label="Globo terráqueo: tocá para marcar un lugar"></canvas>
+
+<header>
+  <div class="brand">Yagui<span>Geo</span> <small id="dayLabel"></small></div>
+  <div class="actions">
+    <button id="btnBoard" class="ghost">Tabla</button>
+    <button id="btnAuth" class="ghost">Entrar con Google</button>
+  </div>
+</header>
+
+<section id="prompt" class="card" hidden>
+  <div class="meta"><span id="roundLabel"></span><span id="scoreLabel"></span></div>
+  <div class="question">¿Dónde queda <strong id="placeName"></strong>?</div>
+  <div class="sub" id="placeCountry"></div>
+</section>
+
+<section id="bar" hidden>
+  <div id="feedback" class="card" hidden></div>
+  <button id="btnMain" class="primary" disabled>Tocá el mapa</button>
+</section>
+
+<dialog id="endDlg">
+  <h2>Resultado de hoy</h2>
+  <div class="big" id="endTotal"></div>
+  <ol id="endRounds"></ol>
+  <p id="endNote" class="note"></p>
+  <div class="row">
+    <button id="btnShare" class="primary">Compartir</button>
+    <button id="btnEndBoard">Ver tabla</button>
+    <button id="btnEndClose" class="ghost">Ver mapa</button>
+  </div>
+</dialog>
+
+<dialog id="boardDlg">
+  <h2>Tabla de posiciones</h2>
+  <div id="boardBody"></div>
+  <div class="row"><button id="btnBoardClose" class="primary">Cerrar</button></div>
+</dialog>
+
+<div id="toast" hidden></div>
+
+<script src="vendor/d3.min.js"></script>
+<script src="vendor/topojson-client.min.js"></script>
+<script src="vendor/supabase.js"></script>
+<script src="config.js"></script>
+<script src="places.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

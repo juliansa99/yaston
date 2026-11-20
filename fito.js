@@ -61,7 +61,8 @@ function mount(root, opts) {
     try { await opts.finish(); } catch (e) { err = e.message || 'No se pudo guardar tu resultado'; }
     if (!root.isConnected) return;
     const t = tally(), max = qs.length;
-    const text = t.ok <= 2 ? 'Para Fito sos casi un desconocido.' : t.ok <= 4 ? 'Lo conocés poco.' : t.ok <= 6 ? 'Amigo de la casa.' : t.ok <= 8 ? 'Casi hermano.' : t.ok < max ? 'Casi perfecto.' : '¡Pleno! Lo conocés mejor que nadie. 🏆';
+    const V = opts.verdicts || ['Para Fito sos casi un desconocido.', 'Lo conocés poco.', 'Amigo de la casa.', 'Casi hermano.', 'Casi perfecto.', '¡Pleno! Lo conocés mejor que nadie. 🏆'];
+    const text = t.ok <= 2 ? V[0] : t.ok <= 4 ? V[1] : t.ok <= 6 ? V[2] : t.ok <= 8 ? V[3] : t.ok < max ? V[4] : V[5];
     if (opts.practice) {
       root.innerHTML = `<div class="fq"><div class="fq-final"><b>Modo práctica</b><span>${t.ok} bien · ${t.bad} mal. No suma puntos ni aparece en la tabla.</span></div>${review()}
         <div class="fq-actions"><button class="btn primary" id="fq-again">Probar de nuevo</button><button class="btn ghost" id="fq-exit">Salir</button></div></div>`;

@@ -293,7 +293,7 @@ $fn$;
 
 create table if not exists public.quiz_config (
   game       text primary key,
-  subject_id uuid not null references public.players(id) on delete cascade   -- de quién es el cuestionario (no puntúa)
+  subject_id uuid references public.players(id) on delete cascade   -- de quién es el cuestionario (no puntúa); nulo = no es sobre nadie
 );
 create table if not exists public.quiz_questions (
   game text not null, n int not null, question text not null,
@@ -310,8 +310,14 @@ language sql stable security definer set search_path = public as $fn$
 $fn$;
 
 create or replace function public.quiz_questions_get(p_game text) returns table (n int, question text, options text[])
-language sql stable security definer set search_path = public as $fn$
-  select q.n, q.question, q.options from public.quiz_questions q where q.game = p_game order by q.n
+language plpgsql stable security definer set search_path = public as $fn$
+begin
+  -- solo pueden leer las preguntas quienes ya están vinculados a un jugador del Plantel
+  if auth.uid() is null or public.my_player_id() is null then
+    raise exception 'Primero elegí quién sos (pestaña Plantel)';
+  end if;
+  return query select q.n, q.question, q.options from public.quiz_questions q where q.game = p_game order by q.n;
+end
 $fn$;
 
 -- Cada pregunta se responde UNA vez; recién ahí la base dice cuál era la correcta.
@@ -398,3 +404,5 @@ $fn$;
 revoke all on function public.quiz_info(text), public.quiz_questions_get(text), public.quiz_answer(text, uuid, int, int), public.quiz_finish(text, uuid), public.start_play(text) from public, anon;
 grant execute on function public.quiz_info(text) to anon, authenticated;
 grant execute on function public.quiz_questions_get(text), public.quiz_answer(text, uuid, int, int), public.quiz_finish(text, uuid), public.quiz_progress(text, uuid), public.start_play(text) to authenticated;
+
+-- Si el cuestionario ya existía con dueño obligatorio: alter table public.quiz_config alter column subject_id drop not null;

@@ -33,6 +33,7 @@ const WEEKLY_GAMES = [
   { id: 'penales', from: '2026-10-16', max: 5, title: 'Pateale Penales a Gure', blurb: 'Tanda de 5 penales. Tocá el arco y fijate si Gure la ataja.' },
   { id: 'adivina', from: '2026-10-23', max: 5, title: '¿Quién ganó ese partido?', blurb: 'Te muestro los equipos de un partido viejo sin el resultado. Adiviná cómo terminó. 5 partidos al azar.' },
   { id: 'fito', from: '2026-11-13', max: 10, quiz: true, title: '¿Cuánto conocés a Fito?', blurb: '10 preguntas con 4 opciones sobre Fito. ¿Quién lo conoce mejor del grupo?' },
+  { id: 'estuvo', from: '2026-11-20', max: 10, quiz: true, title: '¿Quién estuvo con…?', blurb: '10 preguntas: ¿quién estuvo con quién? Pocas certezas y mucha memoria.', verdicts: ['No te enterás de nada.', 'Te falta chusmear más.', 'Más o menos al día.', 'Buen chusma: sabés bastante.', 'Casi la enciclopedia del grupo.', '¡Pleno! Sos el archivo histórico. 🏆'] },
 ];
 const gameForWeek = wk => [...WEEKLY_GAMES].reverse().find(g => g.from <= wk) || null;
 
@@ -417,7 +418,7 @@ function mountQuiz(g) {
   const practice = S.playId === 'practice';
   const row = r => (Array.isArray(r) ? r[0] : r);
   window.YastonQuiz?.mount($('#game-root'), {
-    title: g.title, practice,
+    title: g.title, practice, verdicts: g.verdicts,
     loadQuestions: () => must(db.rpc('quiz_questions_get', { p_game: g.id })),
     progress: async () => (practice ? [] : await must(db.rpc('quiz_progress', { p_game: g.id, p_play: S.playId }))), // respuestas ya dadas (para retomar)
     // cada pregunta se responde una vez; la base devuelve si estuvo bien y cuál era la correcta

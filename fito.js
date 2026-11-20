@@ -41,7 +41,8 @@ function mount(root, opts) {
       opts_[correct]?.classList.add('right');
       if (!ok) b.classList.add('wrong');
       try { if (!ok) navigator.vibrate?.(60); } catch { /* sin vibración */ }
-      root.querySelector('#fq-fb').innerHTML = ok ? '<span class="ok">✅ ¡Correcta!</span>' : `<span class="bad">❌ Era la ${LETTERS[correct]}) ${esc(q.options[correct] ?? '?')}</span>`;
+      // si la pregunta tiene un mensaje especial para quien acierta, se muestra en lugar de "¡Correcta!"
+      root.querySelector('#fq-fb').innerHTML = ok ? `<span class="ok">✅ ${esc(r.note || '¡Correcta!')}</span>` : `<span class="bad">❌ Era la ${LETTERS[correct]}) ${esc(q.options[correct] ?? '?')}</span>`;
       root.querySelector('.fq-tally').outerHTML = tallyHtml();
       root.querySelector('#fq-next').classList.remove('hidden');
       root.querySelector('#fq-go').onclick = () => { i++; if (i < qs.length) question(); else finish(); };

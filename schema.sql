@@ -298,6 +298,7 @@ create table if not exists public.quiz_config (
 create table if not exists public.quiz_questions (
   game text not null, n int not null, question text not null,
   options text[] not null, answer int not null,                               -- answer = posición 0-based de la correcta
+  correct_note text,                                                           -- mensaje especial al acertar (opcional)
   primary key (game, n)
 );
 alter table public.quiz_config enable row level security;
@@ -330,17 +331,18 @@ alter table public.quiz_answers enable row level security;   -- sin políticas: 
 
 drop function if exists public.quiz_finish(text, uuid, int[]);
 
+-- (si cambia lo que devuelve: drop function if exists public.quiz_answer(text, uuid, int, int);)
 create or replace function public.quiz_answer(p_game text, p_play uuid, p_n int, p_choice int)
-returns table (is_correct boolean, correct_idx int)
+returns table (is_correct boolean, correct_idx int, note text)
 language plpgsql security definer set search_path = public as $fn$
-declare me uuid := public.my_player_id(); subj uuid; ans int;
+declare me uuid := public.my_player_id(); subj uuid; ans int; nt text;
 begin
   if auth.uid() is null then raise exception 'Tenés que entrar con Google'; end if;
-  select a.answer into ans from public.quiz_questions a where a.game = p_game and a.n = p_n;
+  select a.answer, a.correct_note into ans, nt from public.quiz_questions a where a.game = p_game and a.n = p_n;
   if ans is null then raise exception 'Esa pregunta no existe'; end if;
   select c.subject_id into subj from public.quiz_config c where c.game = p_game;
   if me is not null and me = subj then            -- el dueño solo prueba: no se guarda nada
-    return query select (p_choice = ans), ans;
+    return query select (p_choice = ans), ans, case when p_choice = ans then nt else null end;
     return;
   end if;
   if not exists (select 1 from public.game_plays g where g.id = p_play and g.user_id = auth.uid() and g.game = p_game and g.goals is null) then
@@ -348,7 +350,7 @@ begin
   end if;
   insert into public.quiz_answers (play_id, n, choice, correct) values (p_play, p_n, p_choice, p_choice = ans) on conflict do nothing;
   if not found then raise exception 'Esa pregunta ya fue respondida'; end if;
-  return query select (p_choice = ans), ans;
+  return query select (p_choice = ans), ans, case when p_choice = ans then nt else null end;   -- el mensaje especial solo sale si acertás
 end
 $fn$;
 
